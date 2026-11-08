@@ -1,8 +1,11 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
 import errorSoundUrl from "@/assets/error-notification.mp3";
+import { BrowserPanel } from "@/features/browser/components/BrowserPanel";
+import { useBrowserPanel } from "@/features/browser/hooks/useBrowserPanel";
 import { MainAppShell } from "@app/components/MainAppShell";
 import { useThreads } from "@threads/hooks/useThreads";
+import { useHistorySyncEvents } from "@app/hooks/useHistorySyncEvents";
 import { usePullRequestComposer } from "@/features/git/hooks/usePullRequestComposer";
 import { useAutoExitEmptyDiff } from "@/features/git/hooks/useAutoExitEmptyDiff";
 import { isMissingRepo } from "@/features/git/utils/repoErrors";
@@ -157,6 +160,7 @@ export default function MainApp() {
     createWorkspaceGroup,
     renameWorkspaceGroup,
     moveWorkspaceGroup,
+    reorderWorkspaceGroup,
     deleteWorkspaceGroup,
     assignWorkspaceGroup,
     removeWorkspace,
@@ -451,6 +455,7 @@ export default function MainApp() {
     pinThread,
     unpinThread,
     isThreadPinned,
+    isThreadHidden,
     getPinTimestamp,
     renameThread,
     startThreadForWorkspace,
@@ -515,6 +520,11 @@ export default function MainApp() {
     onMessageActivity: handleThreadMessageActivity,
     threadSortKey: threadListSortKey,
     onThreadCodexMetadataDetected: handleThreadCodexMetadataDetected,
+  });
+  useHistorySyncEvents({
+    workspaces,
+    enabled: appSettings.backendMode === "local",
+    listThreadsForWorkspaces,
   });
   const { connectionState: remoteThreadConnectionState, reconnectLive } =
     useRemoteThreadLiveConnection({
@@ -1494,6 +1504,7 @@ export default function MainApp() {
     typeof gitRootOverride === "string" && gitRootOverride.trim().length > 0;
   const showGitInitBanner =
     Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
+  const browser = useBrowserPanel();
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1507,6 +1518,11 @@ export default function MainApp() {
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
+          groupName: workspaceGroups.find((group) => group.id === activeWorkspace.settings.groupId)?.name,
+          branch: currentBranch,
+          onSaveProjectInfo: (id, projectInfo) => updateWorkspaceSettings(id, { projectInfo }),
+          timeThreadsByWorkspace: threadsByWorkspace,
+          onOpenWebsite: !isCompact ? (url) => browser.openWebsite(activeWorkspace.id, url) : undefined,
           showGitInitBanner,
           initGitRepoLoading,
           onInitGitRepo: modalActions.openInitGitRepoPrompt,
@@ -1516,6 +1532,7 @@ export default function MainApp() {
           prompt: workspacePrompt,
           onPromptChange: setWorkspacePrompt,
           onStartRun: startWorkspaceRun,
+          composerImages: composerWorkspaceState,
           runMode: workspaceRunMode,
           onRunModeChange: setWorkspaceRunMode,
           models,
@@ -1593,11 +1610,13 @@ export default function MainApp() {
     workspaces,
     groupedWorkspaces,
     workspaceGroupsCount: workspaceGroups.length,
+    onReorderWorkspaceGroup: reorderWorkspaceGroup,
     deletingWorktreeIds,
     newAgentDraftWorkspaceId,
     startingDraftThreadWorkspaceId,
     threadsByWorkspace,
     threadParentById,
+    isThreadHidden,
     threadStatusById,
     threadResumeLoadingById,
     threadListLoadingByWorkspace,
@@ -1877,5 +1896,24 @@ export default function MainApp() {
     },
   });
 
-  return <MainAppShell {...mainAppShellProps} />;
+  const browserAvailable = !isCompact && Boolean(activeWorkspace) && !showHome;
+  const browserObscured = Boolean(appModalsProps.settingsOpen || appModalsProps.renamePrompt || appModalsProps.initGitRepoPrompt || appModalsProps.worktreePrompt || appModalsProps.clonePrompt || appModalsProps.workspaceFromUrlPrompt || appModalsProps.mobileRemoteWorkspacePathPrompt || appModalsProps.branchSwitcher);
+  return <MainAppShell {...mainAppShellProps}
+    browserToggleNode={browserAvailable ? <button type="button" className={`main-header-action${browser.open ? " is-active" : ""}`} aria-pressed={browser.open} onClick={() => browser.setOpen(!browser.open)}>Browser</button> : undefined}
+    browserPanelNode={browserAvailable && browser.open && activeWorkspace ? <BrowserPanel
+      workspaceId={activeWorkspace.id}
+      navigationRequest={browser.navigationRequest?.workspaceId === activeWorkspace.id ? browser.navigationRequest : null}
+      onNavigationHandled={browser.clearNavigationRequest}
+      annotations={browser.annotationsByWorkspace[activeWorkspace.id] || []}
+      visible={!browserObscured}
+      canInsert={composerWorkspaceState.canInsertComposerText}
+      onAddAnnotation={(annotation) => browser.addAnnotation(activeWorkspace.id, annotation)}
+      onRemoveAnnotation={(id) => browser.removeAnnotation(activeWorkspace.id, id)}
+      onInsert={(text, screenshots) => {
+        composerWorkspaceState.handleInsertComposerText(text);
+        composerWorkspaceState.attachImages(screenshots);
+      }}
+      onClose={() => browser.setOpen(false)}
+    /> : undefined}
+  />;
 }

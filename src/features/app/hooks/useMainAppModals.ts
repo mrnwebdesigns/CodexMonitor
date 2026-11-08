@@ -17,6 +17,8 @@ import type { SettingsViewProps } from "@settings/components/SettingsView";
 import { useRenameThreadPrompt } from "@threads/hooks/useRenameThreadPrompt";
 import { useBranchSwitcher } from "@/features/git/hooks/useBranchSwitcher";
 import { useInitGitRepoPrompt } from "@/features/git/hooks/useInitGitRepoPrompt";
+import type { GitInitSelection } from "@services/tauri";
+import type { GitSetupReviewChange } from "@/features/git/hooks/useInitGitRepoPrompt";
 import type { InitGitRepoOutcome } from "@/features/git/hooks/useGitActions";
 import { useWorktreePrompt } from "@/features/workspaces/hooks/useWorktreePrompt";
 import { useClonePrompt } from "@/features/workspaces/hooks/useClonePrompt";
@@ -39,7 +41,7 @@ type UseMainAppModalsArgs = {
   };
   git: {
     checkoutBranch: (name: string) => Promise<void>;
-    initGitRepo: (branch: string) => Promise<InitGitRepoOutcome>;
+    initGitRepo: (branch: string, setup?: GitInitSelection) => Promise<InitGitRepoOutcome>;
     createGitHubRepo: (
       repo: string,
       visibility: "private" | "public",
@@ -209,6 +211,7 @@ type BuildAppModalsPropsArgs = {
   initGitRepoPrompt: AppModalsProps["initGitRepoPrompt"];
   initGitRepoPromptBusy: boolean;
   onInitGitRepoPromptBranchChange: (value: string) => void;
+  onInitGitRepoPromptReviewChange: (change: GitSetupReviewChange) => void;
   onInitGitRepoPromptCreateRemoteChange: (value: boolean) => void;
   onInitGitRepoPromptRepoNameChange: (value: string) => void;
   onInitGitRepoPromptPrivateChange: (value: boolean) => void;
@@ -268,6 +271,7 @@ function buildAppModalsProps({
   initGitRepoPrompt,
   initGitRepoPromptBusy,
   onInitGitRepoPromptBranchChange,
+  onInitGitRepoPromptReviewChange,
   onInitGitRepoPromptCreateRemoteChange,
   onInitGitRepoPromptRepoNameChange,
   onInitGitRepoPromptPrivateChange,
@@ -314,6 +318,7 @@ function buildAppModalsProps({
     initGitRepoPrompt,
     initGitRepoPromptBusy,
     onInitGitRepoPromptBranchChange,
+  onInitGitRepoPromptReviewChange,
     onInitGitRepoPromptCreateRemoteChange,
     onInitGitRepoPromptRepoNameChange,
     onInitGitRepoPromptPrivateChange,
@@ -402,6 +407,7 @@ export function useMainAppModals({
     initGitRepoPrompt,
     openInitGitRepoPrompt,
     handleInitGitRepoPromptBranchChange,
+    handleInitGitRepoPromptReviewChange,
     handleInitGitRepoPromptCreateRemoteChange,
     handleInitGitRepoPromptRepoNameChange,
     handleInitGitRepoPromptPrivateChange,
@@ -474,6 +480,7 @@ export function useMainAppModals({
         initGitRepoPrompt,
         initGitRepoPromptBusy: git.initGitRepoLoading || git.createGitHubRepoLoading,
         onInitGitRepoPromptBranchChange: handleInitGitRepoPromptBranchChange,
+        onInitGitRepoPromptReviewChange: handleInitGitRepoPromptReviewChange,
         onInitGitRepoPromptCreateRemoteChange:
           handleInitGitRepoPromptCreateRemoteChange,
         onInitGitRepoPromptRepoNameChange: handleInitGitRepoPromptRepoNameChange,
@@ -536,6 +543,7 @@ export function useMainAppModals({
       git.initGitRepoLoading,
       handleBranchSelect,
       handleInitGitRepoPromptBranchChange,
+      handleInitGitRepoPromptReviewChange,
       handleInitGitRepoPromptCancel,
       handleInitGitRepoPromptConfirm,
       handleInitGitRepoPromptCreateRemoteChange,

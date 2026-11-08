@@ -15,6 +15,8 @@ const menuItemNew = vi.hoisted(() => vi.fn(async (options) => options));
 vi.mock("@tauri-apps/api/menu", () => ({
   Menu: { new: menuNew },
   MenuItem: { new: menuItemNew },
+  CheckMenuItem: { new: menuItemNew },
+  Submenu: { new: menuItemNew },
 }));
 
 vi.mock("@tauri-apps/api/window", () => ({
@@ -43,7 +45,72 @@ vi.mock("../../../services/toasts", () => ({
 }));
 
 describe("useSidebarMenus", () => {
+  it("offers the current project color and routes selection and clearing to the project", async () => {
+    menuNew.mockClear();
+    const onSetProjectColor = vi.fn();
+    const { result } = renderHook(() => useSidebarMenus({
+      onSetProjectColor, getProjectColor: () => "custom:#112233",
+      projectColorPalette: [{ id: "blue", label: "Blue", value: "#6199ed" }, { id: "custom:#112233", label: "Brand navy", value: "#112233" }],
+      onDeleteWorkspace: vi.fn(), onDeleteThread: vi.fn(), onSyncThread: vi.fn(),
+      onPinThread: vi.fn(), onUnpinThread: vi.fn(), isThreadPinned: () => false,
+      onRenameThread: vi.fn(), onReloadWorkspaceThreads: vi.fn(), onDeleteWorktree: vi.fn(),
+    }));
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 12, clientY: 34 } as unknown as ReactMouseEvent;
+    await result.current.showWorkspaceMenu(event, "client-project");
+    const colors = menuNew.mock.calls[0][0].items.find((item: { text: string }) => item.text === "Project color").items;
+    expect(colors.filter((item: { checked: boolean }) => item.checked).map((item: { text: string }) => item.text)).toEqual(["Brand navy"]);
+    colors.find((item: { text: string }) => item.text === "Brand navy").action();
+    expect(onSetProjectColor).toHaveBeenLastCalledWith("client-project", "custom:#112233");
+    colors.find((item: { text: string }) => item.text === "Blue").action();
+    expect(onSetProjectColor).toHaveBeenLastCalledWith("client-project", "blue");
+    colors.find((item: { text: string }) => item.text === "None").action();
+    expect(onSetProjectColor).toHaveBeenLastCalledWith("client-project", null);
+  });
+
+  it("offers removal only for an Active Threads menu and keeps it separate from hiding or deleting", async () => {
+    menuNew.mockClear();
+    const onRemoveActiveThread = vi.fn();
+    const onHideWorkspace = vi.fn();
+    const onDeleteWorkspace = vi.fn();
+    const onDeleteThread = vi.fn();
+    const { result } = renderHook(() => useSidebarMenus({
+      onRemoveActiveThread, onHideWorkspace, onDeleteWorkspace,
+      onDeleteThread, onSyncThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(),
+      isThreadPinned: () => false, onRenameThread: vi.fn(), onReloadWorkspaceThreads: vi.fn(), onDeleteWorktree: vi.fn(),
+    }));
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 12, clientY: 34 } as unknown as ReactMouseEvent;
+    await result.current.showThreadMenu(event, "client-tree", "task", true);
+    expect(menuNew.mock.calls[0][0].items.some((item: { text: string }) => item.text === "Remove from Active Threads")).toBe(false);
+    await result.current.showThreadMenu(event, "client-tree", "task", true, { isActiveThread: true });
+    const remove = menuNew.mock.calls[1][0].items.find((item: { text: string }) => item.text === "Remove from Active Threads");
+    expect(remove).toBeDefined();
+    remove.action();
+    expect(onRemoveActiveThread).toHaveBeenCalledWith("client-tree", "task");
+    expect(onHideWorkspace).not.toHaveBeenCalled();
+    expect(onDeleteWorkspace).not.toHaveBeenCalled();
+    expect(onDeleteThread).not.toHaveBeenCalled();
+  });
+
+  it("hides a project through a separate action without deleting it", async () => {
+    menuNew.mockClear();
+    const onHideWorkspace = vi.fn(); const onDeleteWorkspace = vi.fn();
+    const { result } = renderHook(() => useSidebarMenus({
+      onHideWorkspace, onDeleteWorkspace,
+      onDeleteThread: vi.fn(), onSyncThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(),
+      isThreadPinned: () => false, onRenameThread: vi.fn(), onReloadWorkspaceThreads: vi.fn(), onDeleteWorktree: vi.fn(),
+    }));
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 12, clientY: 34 } as unknown as ReactMouseEvent;
+    await result.current.showWorkspaceMenu(event, "client-project");
+    const items = menuNew.mock.calls[0]?.[0].items;
+    const hide = items.find((item: { text: string }) => item.text === "Hide project");
+    expect(hide).toBeDefined();
+    hide.action();
+    expect(onHideWorkspace).toHaveBeenCalledWith("client-project");
+    expect(onDeleteWorkspace).not.toHaveBeenCalled();
+  });
+
   it("adds a show in file manager option for worktrees", async () => {
+    menuNew.mockClear();
     const onDeleteThread = vi.fn();
     const onSyncThread = vi.fn();
     const onPinThread = vi.fn();

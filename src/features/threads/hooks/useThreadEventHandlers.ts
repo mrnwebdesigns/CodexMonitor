@@ -18,6 +18,7 @@ import type { ThreadAction } from "./useThreadsReducer";
 
 type ThreadEventHandlersOptions = {
   activeThreadId: string | null;
+  onThreadCompleted?: (workspaceId: string, threadId: string) => void;
   dispatch: Dispatch<ThreadAction>;
   getItemsForThread: (threadId: string) => ConversationItem[];
   planByThreadRef: MutableRefObject<Record<string, TurnPlan | null>>;
@@ -59,6 +60,7 @@ type ThreadEventHandlersOptions = {
 
 export function useThreadEventHandlers({
   activeThreadId,
+  onThreadCompleted,
   dispatch,
   getItemsForThread,
   planByThreadRef,
@@ -170,6 +172,7 @@ export function useThreadEventHandlers({
     onTurnError,
   } = useThreadTurnEvents({
     dispatch,
+    onThreadCompleted,
     planByThreadRef,
     getCurrentRateLimits,
     getCustomName,

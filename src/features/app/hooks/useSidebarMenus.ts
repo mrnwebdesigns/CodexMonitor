@@ -1,11 +1,12 @@
 import { useCallback, type MouseEvent } from "react";
-import { Menu, MenuItem } from "@tauri-apps/api/menu";
+import { CheckMenuItem, Menu, MenuItem, Submenu } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import type { WorkspaceInfo } from "../../../types";
 import { pushErrorToast } from "../../../services/toasts";
 import { fileManagerName } from "../../../utils/platformPaths";
+import { SIDEBAR_COLORS, type SidebarColor, type SidebarColorOption } from "@app/utils/sidebarColors";
 
 type SidebarMenuHandlers = {
   onDeleteThread: (workspaceId: string, threadId: string) => void;
@@ -16,6 +17,11 @@ type SidebarMenuHandlers = {
   onRenameThread: (workspaceId: string, threadId: string) => void;
   onReloadWorkspaceThreads: (workspaceId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
+  onHideWorkspace?: (workspaceId: string) => void;
+  onRemoveActiveThread?: (workspaceId: string, threadId: string) => void;
+  getProjectColor?: (workspaceId: string) => SidebarColor | undefined;
+  projectColorPalette?: readonly SidebarColorOption[];
+  onSetProjectColor?: (workspaceId: string, color: SidebarColor | null) => void;
   onDeleteWorktree: (workspaceId: string) => void;
 };
 
@@ -28,6 +34,11 @@ export function useSidebarMenus({
   onRenameThread,
   onReloadWorkspaceThreads,
   onDeleteWorkspace,
+  onHideWorkspace,
+  onRemoveActiveThread,
+  getProjectColor,
+  projectColorPalette = SIDEBAR_COLORS,
+  onSetProjectColor,
   onDeleteWorktree,
 }: SidebarMenuHandlers) {
   const showThreadMenu = useCallback(
@@ -36,6 +47,7 @@ export function useSidebarMenus({
       workspaceId: string,
       threadId: string,
       canPin: boolean,
+      options?: { isActiveThread?: boolean },
     ) => {
       event.preventDefault();
       event.stopPropagation();
@@ -62,6 +74,9 @@ export function useSidebarMenus({
         },
       });
       const items = [renameItem, syncItem];
+      if (options?.isActiveThread && onRemoveActiveThread) {
+        items.unshift(await MenuItem.new({ text: "Remove from Active Threads", action: () => onRemoveActiveThread(workspaceId, threadId) }));
+      }
       if (canPin) {
         const isPinned = isThreadPinned(workspaceId, threadId);
         items.push(
@@ -90,6 +105,7 @@ export function useSidebarMenus({
       onRenameThread,
       onSyncThread,
       onUnpinThread,
+      onRemoveActiveThread,
     ],
   );
 
@@ -105,12 +121,32 @@ export function useSidebarMenus({
         text: "Delete",
         action: () => onDeleteWorkspace(workspaceId),
       });
-      const menu = await Menu.new({ items: [reloadItem, deleteItem] });
+      const items: Array<MenuItem | Submenu> = [reloadItem, deleteItem];
+      if (onSetProjectColor) {
+        const selectedColor = getProjectColor?.(workspaceId);
+        const colorItems = await Promise.all([
+          CheckMenuItem.new({
+            text: "None",
+            checked: !selectedColor,
+            action: () => onSetProjectColor(workspaceId, null),
+          }),
+          ...projectColorPalette.map((color) => CheckMenuItem.new({
+            text: color.label,
+            checked: selectedColor === color.id,
+            action: () => onSetProjectColor(workspaceId, color.id),
+          })),
+        ]);
+        items.unshift(await Submenu.new({ text: "Project color", items: colorItems }));
+      }
+      if (onHideWorkspace) {
+        items.unshift(await MenuItem.new({ text: "Hide project", action: () => onHideWorkspace(workspaceId) }));
+      }
+      const menu = await Menu.new({ items });
       const window = getCurrentWindow();
       const position = new LogicalPosition(event.clientX, event.clientY);
       await menu.popup(position, window);
     },
-    [onReloadWorkspaceThreads, onDeleteWorkspace],
+    [onReloadWorkspaceThreads, onDeleteWorkspace, onHideWorkspace, getProjectColor, onSetProjectColor, projectColorPalette],
   );
 
   const showWorktreeMenu = useCallback(

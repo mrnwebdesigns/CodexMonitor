@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Home } from "./Home";
+vi.mock("@/features/search/components/SearchStorageSection", () => ({ SearchStorageSection: () => null }));
 
 afterEach(() => {
   cleanup();

@@ -2,6 +2,13 @@
 
 Canonical navigation guide for CodexMonitor. Use this as: "if you need X, edit Y".
 
+## Message search and storage dashboard
+
+- Shared app/daemon search core: `src-tauri/src/shared/message_search_core.rs`; embedded indexer and fixtures: `scripts/message_search.py`, `scripts/test_message_search.py`.
+- Additive IPC/RPC methods: `search_messages`, `message_search_status`, `message_search_control`. App adapter: `src-tauri/src/message_search.rs`; daemon route: `rpc/workspace.rs`; frontend wrapper: `src/services/tauri.ts`.
+- Search result hooks/components and Home storage controls: `src/features/search/`, styled by `src/styles/message-search.css`. Sidebar results respect project visibility and `useThreads`' hidden-chat predicate passed through the layout wiring.
+- Scope, runtime requirements, storage metrics, and safe cache maintenance: `docs/message-search.md`.
+
 Related docs:
 
 - Setup/build/release: `README.md`
@@ -90,6 +97,12 @@ Use TS/Vite aliases for refactor-safe imports:
 
 - Prompt UI and workflow: `src/features/prompts/components/PromptPanel.tsx`, `src/features/prompts/hooks/useCustomPrompts.ts`
 
+### Image attachment drops
+
+- Native event fanout: `src/services/dragDrop.ts`. The `WebviewWindow` event target accepts both window and webview routes where native drops are enabled. On macOS, `src-tauri/tauri.macos.conf.json` delegates file drops to WebKit so screenshot promises can arrive as HTML files. `src/services/dragDrop.test.ts` checks event routing and preservation of the other window defaults.
+- Conversation targeting, paste, and import state: `src/features/composer/hooks/useComposerImageDrop.ts`; `ChatPane.tsx` declares the drop boundary. `ComposerInput.tsx` shows progress/errors and prevents sending before an import finishes.
+- macOS sidebar directory paths: `src-tauri/src/image_drop.rs`, registered in `src-tauri/src/lib.rs` and wrapped by `resolveDroppedDirectories` in `src/services/tauri.ts`. This app-only command matches existing directories from the drag pasteboard to the current HTML drop's filenames; it excludes the general clipboard and remote browser. `useWorkspaceDropZone.ts` supports both native paths and HTML directory entries. Images and file-promise export are handled by WebKit and the composer, with no native image-import IPC or daemon RPC equivalent.
+
 ## Backend App (Tauri) Navigation
 
 - Command registry (what frontend can invoke): `src-tauri/src/lib.rs`
@@ -145,3 +158,58 @@ Keep Rust and TypeScript contracts in sync:
 - Frontend types: `src/types.ts`
 
 This is required for settings, workspace metadata, app-server payload handling, and RPC response decoding.
+
+
+## Embedded desktop browser
+
+- UI, annotation state and formatting: `src/features/browser/*`.
+- Native webview, navigation and macOS snapshots: `src-tauri/src/browser/*`.
+- IPC wrappers and events: `src/services/tauri.ts`, `src/services/events.ts`.
+- Desktop split view: `src/features/layout/components/DesktopLayout.tsx`.
+- Browser web content has no Tauri capability grants; its bounded selection bridge only accepts an annotation after the user enables selection. Feedback is added to the composer draft by an explicit user action.
+- Browser commands run in the local desktop app, including when Codex uses a remote daemon. They intentionally have no daemon RPC equivalent.
+- The macOS webview retains its own website sessions. Browser extension hosting and verified 1Password autofill are not implemented.
+
+- Native window actions use `get_window("main")`; `get_webview_window("main")` stops matching after the embedded browser is added. Dock reopen, tray, and menu actions must work with multiple webviews.
+
+
+## Project directory and project home
+
+- Project sorting and activity rollups: `src/features/workspaces/domain/projectActivity.ts`. Clone and worktree activity rolls up to the parent project for project order and hidden-project summaries.
+- Automatic Active Threads selection: `src/features/workspaces/domain/activeThreads.ts`. Running/reviewing chats appear first; up to six other chats updated in the last seven days follow them. `ActiveThreads.tsx` shows the thread title above a smaller owning-project label and opens the chat in its actual workspace. The area appears in every organization mode and excludes hidden projects/chats.
+- Active Threads unread indicator: idle chats with unread results show an accent dot and **Finished · unread**. `useThreadReadState.ts` under `src/features/threads/hooks/` persists unread flags locally, marks unseen turn completions, and acknowledges the selected chat when the window is visible and focused. Selecting or continuing a chat clears its unread flag. Running/reviewing states take precedence; recent-list limits and dismissals are unchanged.
+- Sidebar clock, saved project order, and active-thread dismissals: `src/features/app/hooks/useSidebarProjects.ts`. Group membership is independent of the active list and sorting. The existing collapse preference for the active area is retained.
+- Project colors: `useProjectColors.ts` stores local project assignments and named custom colors, synchronizing mounted consumers and window storage events through a shared external store. `SettingsProjectColors.tsx` under `src/features/settings/components/sections/` provides palette creation/removal; `SettingsProjectsSection.tsx` provides per-project color selectors. `useSidebarMenus.ts` exposes the same palette under **Project color**. `utils/sidebarColors.ts` validates hex colors and supplies styles to `WorkspaceCard.tsx` and `ActiveThreads.tsx`; existing preset IDs remain valid. Tints in `src/styles/sidebar.css` use the theme surface, tone down arbitrary custom colors to preserve contrast, and switch to an opaque base with reduced transparency. Removing a custom color clears only assignments of that color.
+- Active Threads removal uses the row's remove button or its thread context menu in `useSidebarMenus.ts`. `useSidebarProjects.ts` stores the removed chat's latest timestamp with its workspace/thread key and excludes it before selecting the six recent entries. Newer activity in that chat makes it eligible again; sibling chats, normal groups, and agents are unaffected. Existing project dismissals remain honored until a chat receives newer activity.
+- Sidebar group drag/keyboard sorting: `src/features/app/hooks/useWorkspaceGroupSort.ts`, `SidebarWorkspaceGroups.tsx`, and `WorkspaceGroup.tsx`. Reorders save existing `WorkspaceGroup.sortOrder` through `useWorkspaceGroupOps.ts`; all configured groups, including empty/hidden groups, retain their metadata. The same ordering serves the Settings up/down controls.
+- Project information UI and unsaved drafts: `src/features/workspaces/components/ProjectInfoCard.tsx`, `src/features/workspaces/hooks/useProjectInfo.ts`. Saved details use optional `WorkspaceSettings.projectInfo` in the shared Rust/TypeScript model and existing settings IPC/daemon routes. Notes are reference material; agent instructions remain in AGENTS.md.
+- Project connection discovery: `src-tauri/src/shared/workspaces_core/project_discovery.rs` and `project_discovery/mainwp.rs`. The `discover_project` app/daemon command returns only selected evidence fields; it never returns raw manifests, SSH configuration, or downstream credential errors. Discovery snapshots and manual overrides persist with project information. WordPress hosting suggestions reflect configured providers; SSH is not logged into. MainWP discovery uses the global MCP configuration and a nonempty exact-site sync, with no credential or lower-level access fallback.
+- Project website actions use one-time navigation requests through `useBrowserPanel` and `BrowserPanel`; links open in the embedded desktop browser.
+- Hosting discovery prefers recognized live provider headers over manifest suggestions. Public probes use an origin-only HEAD request, verified TLS, pinned public DNS, no proxy, no credentials, and no redirects. Generic CDN headers alone do not identify the origin host.
+- Project time reports: `ProjectTimeCard.tsx`, `useProjectTime.ts`, and `domain/projectTime.ts` under `src/features/workspaces/`, styled by `src/styles/project-time.css`. The additive `project_time_snapshot` IPC/daemon method requires a workspace ID and uses `src-tauri/src/shared/project_time_core.rs`. It reads plain/zstd local rollouts, includes archived and older resumed sessions, unions duplicate intervals within each thread, splits durations at local midnight, and clips totals to the requested range. Recorded task/abort timing takes priority over legacy activity estimates; unfinished turns stop at their last logged agent activity. Project families include clones/worktrees; the most specific configured workspace path owns a transcript. Human-time multipliers persist per workspace in frontend local storage.
+
+
+## Reviewed Git project setup
+
+- Shared inspection and initialization: `src-tauri/src/shared/git_ui_core/setup.rs`; fixture-based coverage: `setup_tests.rs`. Preview writes only to an owned temporary Git directory. Initialization requires the current review fingerprint, appends proposed rules to the existing `.gitignore`, stages only the reviewed paths, and verifies the resulting initial commit.
+- Whole WordPress installations require selecting a source folder; source-folder suggestions cover themes and plugins. Existing repositories, paths outside the workspace, stale reviews, missing Git identity, and unresolved credential findings prevent initialization. Common credential checks return paths/reasons without matching values; they are not an exhaustive secrets audit.
+- App and daemon expose `preview_git_init` and the additive `setup` selection on `init_git_repo` through shared `git_rpc` request types. Legacy `force` does not bypass review.
+- UI: `useInitGitRepoPrompt`, `InitGitRepoPrompt`, and `useGitActions`. Setup defaults to local-only. GitHub creation/push is an explicit option; failed initialization prevents publishing, and a remote retry does not repeat local initialization.
+
+
+## Sidebar project visibility
+
+- Local sidebar visibility preference and project-family filtering: `src/features/app/hooks/useProjectVisibility.ts`. Hidden project IDs persist in app-local storage; saved workspace metadata, chats, connections, and running agents are unchanged.
+- Shared project ownership traversal for clones/worktrees and activity: `src/features/workspaces/domain/projectHierarchy.ts`.
+- Right-click a project in its regular group to hide it. `HiddenProjects.tsx` restores individual projects or all projects through the always-visible Hidden projects control.
+- Hidden rows are grouped from the same project inventory used by the badge, with an Ungrouped fallback when group metadata is unavailable. Hidden search is independent of conversation search and starts empty whenever the view opens.
+- `Sidebar.tsx` filters hidden project families before building group rows, Active Threads, pinned chats, search results, thread-only views, and project choices for new chats. Global project data remains available outside the sidebar.
+
+## Automatic local Codex history imports
+
+- Shared native worker, request protection, and change-event routing: `src-tauri/src/shared/history_sync_core.rs`.
+- Embedded SQLite/rollout importer and durable recovery journal: `scripts/codex_history_sync.py`; fixture tests: `scripts/test_codex_history_sync.py`.
+- App/daemon startup adapters: `src-tauri/src/lib.rs` and `src-tauri/src/bin/codex_monitor_daemon.rs`.
+- Protect chats before runtime resume or mutation: `src-tauri/src/backend/app_server.rs`.
+- Refresh affected sidebar lists without replacing local UI state: `src/features/app/hooks/useHistorySyncEvents.ts`, wired in `MainApp.tsx`.
+- Runtime configuration and ownership rules: `docs/codex-history-import.md`.

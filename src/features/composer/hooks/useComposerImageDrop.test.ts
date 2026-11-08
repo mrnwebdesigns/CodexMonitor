@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useComposerImageDrop } from "./useComposerImageDrop";
 
 let mockOnDragDropEvent:
@@ -81,6 +81,150 @@ function setMockFileReader() {
 describe("useComposerImageDrop", () => {
   beforeEach(() => {
     mockOnDragDropEvent = null;
+    vi.stubGlobal("devicePixelRatio", 1);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it.each(["drop", "paste"])("tracks a %s image until WebKit's file has finished reading", async (method) => {
+    let finish!: () => void;
+    class DelayedReader {
+      result: string | null = null;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      readAsDataURL() { finish = () => { this.result = "data:image/png;base64,AA=="; this.onload?.(); }; }
+    }
+    vi.stubGlobal("FileReader", DelayedReader);
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    const file = new File(["image"], "screenshot.png", { type: "image/png" });
+    let drop!: Promise<void>;
+    act(() => {
+      drop = method === "drop" ? hook.result.handleDrop({
+        dataTransfer: { files: [file], items: [] },
+        preventDefault: vi.fn(),
+      } as unknown as React.DragEvent<HTMLElement>) : hook.result.handlePaste({
+        clipboardData: { items: [{ type: "image/png", getAsFile: () => file }] },
+        preventDefault: vi.fn(),
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>);
+    });
+    expect(hook.result.isImportingImages).toBe(true);
+    expect(onAttachImages).not.toHaveBeenCalled();
+    await act(async () => { finish(); await drop; });
+    expect(hook.result.isImportingImages).toBe(false);
+    expect(onAttachImages).toHaveBeenCalledWith(["data:image/png;base64,AA=="]);
+    hook.unmount();
+  });
+
+  it("reports an unreadable dropped image and finishes its import state", async () => {
+    class FailedReader {
+      onerror: (() => void) | null = null;
+      readAsDataURL() { this.onerror?.(); }
+    }
+    vi.stubGlobal("FileReader", FailedReader);
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    await act(async () => {
+      await hook.result.handleDrop({
+        dataTransfer: { files: [new File(["image"], "screenshot.png", { type: "image/png" })], items: [] },
+        preventDefault: vi.fn(),
+      } as unknown as React.DragEvent<HTMLElement>);
+    });
+    expect(onAttachImages).not.toHaveBeenCalled();
+    expect(hook.result.isImportingImages).toBe(false);
+    expect(hook.result.imageDropError).toContain("could not be read");
+    hook.unmount();
+  });
+
+  it("accepts a native image drop over the conversation above the composer", () => {
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    const pane = document.createElement("div");
+    pane.setAttribute("data-composer-drop-scope", "");
+    pane.getBoundingClientRect = () =>
+      ({ left: 200, top: 50, right: 800, bottom: 700 } as DOMRect);
+    const input = document.createElement("div");
+    input.getBoundingClientRect = () =>
+      ({ left: 200, top: 600, right: 800, bottom: 700 } as DOMRect);
+    pane.appendChild(input);
+    hook.result.dropTargetRef.current = input;
+
+    act(() => {
+      mockOnDragDropEvent?.({
+        payload: { type: "drop", position: { x: 400, y: 250 }, paths: ["/tmp/photo.png"] },
+      });
+    });
+
+    expect(onAttachImages).toHaveBeenCalledWith(["/tmp/photo.png"]);
+    hook.unmount();
+  });
+
+  it("normalizes native physical positions without waiting for a DOM drag event", () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    const input = document.createElement("div");
+    input.getBoundingClientRect = () =>
+      ({ left: 200, top: 400, right: 600, bottom: 600 } as DOMRect);
+    hook.result.dropTargetRef.current = input;
+
+    act(() => {
+      mockOnDragDropEvent?.({
+        payload: { type: "drop", position: { x: 800, y: 1000 }, paths: ["/tmp/photo.png"] },
+      });
+    });
+
+    expect(onAttachImages).toHaveBeenCalledWith(["/tmp/photo.png"]);
+    hook.unmount();
+  });
+
+  it("keeps macOS Retina drops in logical points and ignores sidebar drops", () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    const input = document.createElement("div");
+    input.getBoundingClientRect = () =>
+      ({ left: 200, top: 400, right: 600, bottom: 600 } as DOMRect);
+    hook.result.dropTargetRef.current = input;
+
+    act(() => {
+      mockOnDragDropEvent?.({
+        payload: { type: "drop", position: { x: 400, y: 500 }, paths: ["/tmp/photo.png"] },
+      });
+      mockOnDragDropEvent?.({
+        payload: { type: "drop", position: { x: 100, y: 500 }, paths: ["/tmp/sidebar.png"] },
+      });
+    });
+
+    expect(onAttachImages).toHaveBeenCalledExactlyOnceWith(["/tmp/photo.png"]);
+    hook.unmount();
+  });
+
+  it("does not attach to a hidden conversation", () => {
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    const hidden = document.createElement("div");
+    hidden.setAttribute("inert", "");
+    const input = document.createElement("div");
+    input.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, right: 600, bottom: 600 } as DOMRect);
+    hidden.appendChild(input);
+    hook.result.dropTargetRef.current = input;
+
+    act(() => {
+      mockOnDragDropEvent?.({
+        payload: { type: "drop", position: { x: 300, y: 300 }, paths: ["/tmp/photo.png"] },
+      });
+    });
+
+    expect(onAttachImages).not.toHaveBeenCalled();
+    hook.unmount();
   });
 
   it("tracks drag over state for file transfers", () => {
@@ -143,6 +287,21 @@ describe("useComposerImageDrop", () => {
       "data:image/jpeg;base64,MOCK",
     ]);
 
+    hook.unmount();
+    restoreFileReader();
+  });
+
+  it("accepts a PNG filename when a drag source omits its MIME type", async () => {
+    const restoreFileReader = setMockFileReader();
+    const onAttachImages = vi.fn();
+    const hook = renderImageDropHook({ disabled: false, onAttachImages });
+    await act(async () => {
+      await hook.result.handleDrop({
+        dataTransfer: { files: [new File(["image"], "screenshot.png")], items: [] },
+        preventDefault: vi.fn(),
+      } as unknown as React.DragEvent<HTMLElement>);
+    });
+    expect(onAttachImages).toHaveBeenCalledWith(["data:image/png;base64,MOCK"]);
     hook.unmount();
     restoreFileReader();
   });

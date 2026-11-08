@@ -1,4 +1,4 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type DragDropPayload = {
   type: "enter" | "over" | "leave" | "drop";
@@ -24,7 +24,9 @@ function start(options?: SubscriptionOptions) {
   if (unlisten || listenPromise) {
     return;
   }
-  listenPromise = getCurrentWindow()
+  // Multi-webview builds emit drops from the webview, while single-webview
+  // builds can emit them from the window. This target receives both for main.
+  listenPromise = getCurrentWebviewWindow()
     .onDragDropEvent((event) => {
       for (const listener of listeners) {
         try {

@@ -187,6 +187,34 @@ pub(crate) struct LocalUsageSnapshot {
     pub(crate) top_models: Vec<LocalUsageModel>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectTimeDay {
+    pub(crate) day: String,
+    pub(crate) agent_time_ms: i64,
+    pub(crate) estimated_time_ms: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectTimeThread {
+    pub(crate) thread_id: String,
+    pub(crate) workspace_id: String,
+    pub(crate) title: Option<String>,
+    pub(crate) days: Vec<ProjectTimeDay>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectTimeSnapshot {
+    pub(crate) updated_at: i64,
+    pub(crate) range_start: String,
+    pub(crate) range_end: String,
+    pub(crate) time_zone: String,
+    pub(crate) threads: Vec<ProjectTimeThread>,
+    pub(crate) warnings: Vec<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum TcpDaemonState {
@@ -312,7 +340,51 @@ pub(crate) struct WorkspaceGroup {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub(crate) struct ProjectFinding {
+    pub(crate) value: String,
+    pub(crate) detail: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectDiscovery {
+    pub(crate) checked_at: i64,
+    pub(crate) website: String,
+    pub(crate) project_type: ProjectFinding,
+    pub(crate) hosting: ProjectFinding,
+    pub(crate) ssh: ProjectFinding,
+    pub(crate) local_hub: ProjectFinding,
+    pub(crate) mainwp: ProjectFinding,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub(crate) struct ProjectInfo {
+    #[serde(default)]
+    pub(crate) client: String,
+    #[serde(default)]
+    pub(crate) summary: String,
+    #[serde(default)]
+    pub(crate) website: String,
+    #[serde(default)]
+    pub(crate) notes: String,
+    #[serde(default, rename = "projectType")]
+    pub(crate) project_type: String,
+    #[serde(default)]
+    pub(crate) hosting: String,
+    #[serde(default)]
+    pub(crate) ssh: String,
+    #[serde(default, rename = "localHub")]
+    pub(crate) local_hub: String,
+    #[serde(default)]
+    pub(crate) mainwp: String,
+    #[serde(default)]
+    pub(crate) discovery: Option<ProjectDiscovery>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub(crate) struct WorkspaceSettings {
+    #[serde(default, rename = "projectInfo")]
+    pub(crate) project_info: Option<ProjectInfo>,
     #[serde(default, rename = "sidebarCollapsed")]
     pub(crate) sidebar_collapsed: bool,
     #[serde(default, rename = "sortOrder")]
@@ -1206,7 +1278,7 @@ impl Default for AppSettings {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppSettings, BackendMode, RemoteBackendProvider, WorkspaceEntry, WorkspaceGroup,
+        AppSettings, BackendMode, ProjectInfo, RemoteBackendProvider, WorkspaceEntry, WorkspaceGroup,
         WorkspaceKind, WorkspaceSettings,
     };
 
@@ -1405,6 +1477,29 @@ mod tests {
         assert!(entry.worktree.is_none());
         assert!(entry.settings.sort_order.is_none());
         assert!(entry.settings.group_id.is_none());
+    }
+
+    #[test]
+    fn project_info_is_optional_for_legacy_workspaces_and_round_trips() {
+        let legacy: WorkspaceSettings = serde_json::from_str(r#"{"sidebarCollapsed":true,"groupId":"clients"}"#).unwrap();
+        assert!(legacy.project_info.is_none());
+        let updated: WorkspaceSettings = serde_json::from_str(r#"{"sidebarCollapsed":true,"groupId":"clients","projectInfo":{"client":"Test client","summary":"Overview","website":"https://example.com/","notes":"Next steps"}}"#).unwrap();
+        let encoded = serde_json::to_value(&updated).unwrap();
+        assert_eq!(encoded["projectInfo"]["notes"], "Next steps");
+        assert_eq!(encoded["projectInfo"]["client"], "Test client");
+        assert_eq!(encoded["groupId"], "clients");
+        let restored: WorkspaceSettings = serde_json::from_value(encoded).unwrap();
+        assert!(restored.sidebar_collapsed);
+        assert_eq!(restored.project_info.unwrap().website, "https://example.com/");
+    }
+
+    #[test]
+    fn project_connection_details_round_trip_with_discovery_evidence() {
+        let input = serde_json::json!({"client":"Client", "summary":"", "website":"https://example.com/", "notes":"", "projectType":"wordpress", "hosting":"SiteGround", "ssh":"client-prod", "localHub":"Registered", "mainwp":"Connected", "discovery": {
+            "checkedAt":1000, "website":"https://example.com/", "projectType":{"value":"wordpress","detail":"Project files"}, "hosting":{"value":"SiteGround","detail":"Manifest"}, "ssh":{"value":"client-prod","detail":"Configured"}, "localHub":{"value":"Registered","detail":"Manifest"}, "mainwp":{"value":"Connected","detail":"Fresh sync"}
+        }});
+        let info: ProjectInfo = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(serde_json::to_value(info).unwrap(), input);
     }
 
     #[test]

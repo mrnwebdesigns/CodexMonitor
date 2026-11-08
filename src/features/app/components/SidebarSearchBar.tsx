@@ -3,6 +3,7 @@ import X from "lucide-react/dist/esm/icons/x";
 type SidebarSearchBarProps = {
   isSearchOpen: boolean;
   searchQuery: string;
+  searchLabel?: string;
   onSearchQueryChange: (value: string) => void;
   onClearSearch: () => void;
 };
@@ -10,6 +11,7 @@ type SidebarSearchBarProps = {
 export function SidebarSearchBar({
   isSearchOpen,
   searchQuery,
+  searchLabel = "Search conversations",
   onSearchQueryChange,
   onClearSearch,
 }: SidebarSearchBarProps) {
@@ -20,8 +22,8 @@ export function SidebarSearchBar({
           className="sidebar-search-input"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.target.value)}
-          placeholder="Search conversations"
-          aria-label="Search conversations"
+          placeholder={searchLabel}
+          aria-label={searchLabel}
           data-tauri-drag-region="false"
           autoFocus
         />

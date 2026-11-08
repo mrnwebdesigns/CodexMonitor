@@ -1,5 +1,6 @@
 import { lazy, memo, Suspense } from "react";
 import type { ComponentType } from "react";
+import type { InitGitRepoPromptState, GitSetupReviewChange } from "../../git/hooks/useInitGitRepoPrompt";
 import type { BranchInfo, WorkspaceInfo } from "../../../types";
 import type { SettingsViewProps } from "../../settings/components/SettingsView";
 import { useRenameThreadPrompt } from "../../threads/hooks/useRenameThreadPrompt";
@@ -64,16 +65,10 @@ export type AppModalsProps = {
   onRenamePromptChange: (value: string) => void;
   onRenamePromptCancel: () => void;
   onRenamePromptConfirm: () => void;
-  initGitRepoPrompt: {
-    workspaceName: string;
-    branch: string;
-    createRemote: boolean;
-    repoName: string;
-    isPrivate: boolean;
-    error: string | null;
-  } | null;
+  initGitRepoPrompt: InitGitRepoPromptState | null;
   initGitRepoPromptBusy: boolean;
   onInitGitRepoPromptBranchChange: (value: string) => void;
+  onInitGitRepoPromptReviewChange: (change: GitSetupReviewChange) => void;
   onInitGitRepoPromptCreateRemoteChange: (value: boolean) => void;
   onInitGitRepoPromptRepoNameChange: (value: string) => void;
   onInitGitRepoPromptPrivateChange: (value: boolean) => void;
@@ -128,6 +123,7 @@ export const AppModals = memo(function AppModals({
   initGitRepoPrompt,
   initGitRepoPromptBusy,
   onInitGitRepoPromptBranchChange,
+  onInitGitRepoPromptReviewChange,
   onInitGitRepoPromptCreateRemoteChange,
   onInitGitRepoPromptRepoNameChange,
   onInitGitRepoPromptPrivateChange,
@@ -193,6 +189,11 @@ export const AppModals = memo(function AppModals({
       {initGitRepoPrompt && (
         <Suspense fallback={null}>
           <InitGitRepoPrompt
+            root={initGitRepoPrompt.root}
+            review={initGitRepoPrompt.review}
+            reviewLoading={initGitRepoPrompt.reviewLoading}
+            localInitialized={initGitRepoPrompt.localInitialized}
+            onReviewChange={onInitGitRepoPromptReviewChange}
             workspaceName={initGitRepoPrompt.workspaceName}
             branch={initGitRepoPrompt.branch}
             createRemote={initGitRepoPrompt.createRemote}

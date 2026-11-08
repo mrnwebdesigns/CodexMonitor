@@ -432,6 +432,7 @@ fn build_initialize_params(client_version: &str) -> Value {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub(crate) struct WorkspaceSession {
+    pub(crate) history_sync_home: Option<PathBuf>,
     pub(crate) codex_args: Option<String>,
     pub(crate) child: Mutex<Child>,
     pub(crate) stdin: Mutex<ChildStdin>,
@@ -502,6 +503,10 @@ impl WorkspaceSession {
         method: &str,
         params: Value,
     ) -> Result<Value, String> {
+        let runtime_pid = std::process::id();
+        let _history_guard = crate::shared::history_sync_core::prepare_request(
+            self.history_sync_home.as_deref(), runtime_pid, method, &params,
+        ).await?;
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = oneshot::channel();
         self.register_workspace(workspace_id).await;
@@ -754,6 +759,10 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     client_version: String,
     event_sink: E,
 ) -> Result<Arc<WorkspaceSession>, String> {
+    // Catch up before a runtime can load the imported history into memory.
+    if let Err(error) = crate::shared::history_sync_core::sync_once(codex_home.as_deref()).await {
+        eprintln!("Automatic history import paused: {error}");
+    }
     let codex_bin = default_codex_bin;
     let _ = check_codex_installation(codex_bin.clone()).await?;
 
@@ -776,6 +785,7 @@ pub(crate) async fn spawn_workspace_session<E: EventSink>(
     let stderr = child.stderr.take().ok_or("missing stderr")?;
 
     let session = Arc::new(WorkspaceSession {
+        history_sync_home: codex_home.or_else(crate::codex::home::resolve_default_codex_home),
         codex_args,
         child: Mutex::new(child),
         stdin: Mutex::new(stdin),

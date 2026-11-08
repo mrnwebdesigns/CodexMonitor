@@ -46,7 +46,7 @@ export function ChatPane({ messagesNode, composerNode, className }: ChatPaneProp
   );
 
   return (
-    <div className={`chat-pane${className ? ` ${className}` : ""}`} style={paneStyle}>
+    <div className={`chat-pane${className ? ` ${className}` : ""}`} style={paneStyle} data-composer-drop-scope>
       <div className="chat-pane-messages">{messagesNode}</div>
       {composerNode ? (
         <div className="chat-pane-composer" ref={composerRef}>

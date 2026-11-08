@@ -13,6 +13,7 @@ import {
   buildWorkspaceGroupById,
   getWorkspaceGroupNameById,
   sortWorkspaceGroups,
+  type ReorderWorkspaceGroup,
 } from "../domain/workspaceGroups";
 import {
   useWorkspaceCrud,
@@ -61,6 +62,7 @@ export type UseWorkspacesResult = {
   createWorkspaceGroup: (name: string) => Promise<WorkspaceGroup | null>;
   renameWorkspaceGroup: (groupId: string, name: string) => Promise<true | null>;
   moveWorkspaceGroup: (groupId: string, direction: "up" | "down") => Promise<true | null>;
+  reorderWorkspaceGroup: ReorderWorkspaceGroup;
   deleteWorkspaceGroup: (groupId: string) => Promise<true | null>;
   assignWorkspaceGroup: (workspaceId: string, groupId: string | null) => Promise<true | null>;
   removeWorkspace: (workspaceId: string) => Promise<void>;
@@ -156,6 +158,7 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspaces
     createWorkspaceGroup,
     deleteWorkspaceGroup,
     moveWorkspaceGroup,
+    reorderWorkspaceGroup,
     renameWorkspaceGroup,
   } = useWorkspaceGroupOps({
     appSettings,
@@ -187,6 +190,7 @@ export function useWorkspaces(options: UseWorkspacesOptions = {}): UseWorkspaces
     createWorkspaceGroup,
     renameWorkspaceGroup,
     moveWorkspaceGroup,
+    reorderWorkspaceGroup,
     deleteWorkspaceGroup,
     assignWorkspaceGroup,
     removeWorkspace,

@@ -46,12 +46,29 @@ pub(super) async fn try_handle(
             let request = parse_request_or_err!(params, git_rpc::WorkspaceIdRequest);
             Some(state.get_git_status(request.workspace_id).await)
         }
+        git_rpc::METHOD_PREVIEW_GIT_INIT => {
+            let request = parse_request_or_err!(params, git_rpc::PreviewGitInitRequest);
+            Some(
+                git_ui_core::preview_git_init_core(
+                    &state.workspaces,
+                    request.workspace_id,
+                    request.root,
+                    request.branch,
+                    request.excluded_paths,
+                )
+                .await,
+            )
+        }
         git_rpc::METHOD_INIT_GIT_REPO => {
-            let request = parse_request_or_err!(params, git_rpc::InitGitRepoRequiredRequest);
-            let force = parse_optional_bool(params, "force").unwrap_or(false);
+            let request = parse_request_or_err!(params, git_rpc::InitGitRepoRequest);
             Some(
                 state
-                    .init_git_repo(request.workspace_id, request.branch, force)
+                    .init_git_repo(
+                        request.workspace_id,
+                        request.branch,
+                        request.force.unwrap_or(false),
+                        request.setup,
+                    )
                     .await,
             )
         }

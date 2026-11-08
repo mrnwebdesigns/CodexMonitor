@@ -6,6 +6,9 @@ import Plus from "lucide-react/dist/esm/icons/plus";
 
 import type { ThreadSummary, WorkspaceInfo } from "../../../types";
 import type { ThreadStatusById } from "../../../utils/threadStatus";
+import type { ReorderWorkspaceGroup } from "@/features/workspaces/domain/workspaceGroups";
+import { useWorkspaceGroupSort } from "@app/hooks/useWorkspaceGroupSort";
+import type { SidebarColor } from "@app/utils/sidebarColors";
 import {
   PopoverMenuItem,
   PopoverSurface,
@@ -24,10 +27,12 @@ import type {
 
 type SidebarWorkspaceGroupsProps = {
   groups: WorkspaceGroupSection[];
+  getProjectColor?: (workspaceId: string) => SidebarColor | undefined;
   hasWorkspaceGroups: boolean;
   collapsedGroups: Set<string>;
   ungroupedCollapseId: string;
   toggleGroupCollapse: (groupId: string) => void;
+  onReorderWorkspaceGroup?: ReorderWorkspaceGroup;
   cloneChildIds: Set<string>;
   clonesBySource: Map<string, WorkspaceInfo[]>;
   worktreesByParent: Map<string, WorkspaceInfo[]>;
@@ -91,12 +96,14 @@ type SidebarWorkspaceEntryProps = Omit<
   | "collapsedGroups"
   | "ungroupedCollapseId"
   | "toggleGroupCollapse"
+  | "onReorderWorkspaceGroup"
 > & {
   workspace: WorkspaceInfo;
 };
 
 function SidebarWorkspaceEntry({
   workspace,
+  getProjectColor,
   cloneChildIds,
   clonesBySource,
   worktreesByParent,
@@ -198,6 +205,7 @@ function SidebarWorkspaceEntry({
   return (
     <WorkspaceCard
       workspace={workspace}
+      color={getProjectColor?.(workspace.id)}
       workspaceName={renderHighlightedName(workspace.name)}
       summary={
         displayThreadRootCount > 0
@@ -383,30 +391,43 @@ export function SidebarWorkspaceGroups({
   collapsedGroups,
   ungroupedCollapseId,
   toggleGroupCollapse,
+  onReorderWorkspaceGroup,
   ...entryProps
 }: SidebarWorkspaceGroupsProps) {
-  return groups.map((group) => {
-    const showGroupHeader = Boolean(group.id) || hasWorkspaceGroups;
-    const toggleId = group.id ?? (showGroupHeader ? ungroupedCollapseId : null);
-    const isGroupCollapsed = Boolean(toggleId && collapsedGroups.has(toggleId));
+  const { getSortProps, announcement, error } = useWorkspaceGroupSort(
+    groups,
+    entryProps.isSearchActive ? undefined : onReorderWorkspaceGroup,
+  );
+  return (
+    <>
+      <span className="workspace-group-sort-status" role="status">{announcement}</span>
+      {error && <p className="workspace-group-sort-error" role="alert">{error}</p>}
+      {groups.map((group) => {
+        const showGroupHeader = Boolean(group.id) || hasWorkspaceGroups;
+        const toggleId = group.id ?? (showGroupHeader ? ungroupedCollapseId : null);
+        const isGroupCollapsed = Boolean(toggleId && collapsedGroups.has(toggleId));
 
-    return (
-      <WorkspaceGroup
-        key={group.id ?? "ungrouped"}
-        toggleId={toggleId}
-        name={group.name}
-        showHeader={showGroupHeader}
-        isCollapsed={isGroupCollapsed}
-        onToggleCollapse={toggleGroupCollapse}
-      >
-        {group.workspaces.map((workspace) => (
-          <SidebarWorkspaceEntry
-            key={workspace.id}
-            workspace={workspace}
-            {...entryProps}
-          />
-        ))}
-      </WorkspaceGroup>
-    );
-  });
+        return (
+          <WorkspaceGroup
+            key={group.id ?? "ungrouped"}
+            toggleId={toggleId}
+            name={group.name}
+            count={group.workspaces.filter((workspace) => !entryProps.cloneChildIds.has(workspace.id)).length}
+            showHeader={showGroupHeader}
+            isCollapsed={isGroupCollapsed}
+            onToggleCollapse={toggleGroupCollapse}
+            sortProps={getSortProps(group.id)}
+          >
+            {group.workspaces.map((workspace) => (
+              <SidebarWorkspaceEntry
+                key={workspace.id}
+                workspace={workspace}
+                {...entryProps}
+              />
+            ))}
+          </WorkspaceGroup>
+        );
+      })}
+    </>
+  );
 }

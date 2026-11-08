@@ -159,6 +159,31 @@
   outline-offset: 4px;
 }
 
+.chat-pane:has(.composer-input-area.is-drag-over)::after {
+  content: "Drop images to attach";
+  position: absolute;
+  inset: 12px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--border-accent);
+  border-radius: 12px;
+  background: var(--surface-popover);
+  color: var(--text-strong);
+  font-size: 16px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.composer-drop-error,
+.composer-drop-status {
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.composer-drop-error { color: var(--status-error); }
+.composer-drop-status { color: var(--text-muted); }
+
 .composer-input-row {
   display: flex;
   align-items: flex-start;

@@ -34,11 +34,13 @@ type UseMainAppLayoutSurfacesArgs = {
   workspaces: WorkspaceInfo[];
   groupedWorkspaces: Array<{ id: string | null; name: string; workspaces: WorkspaceInfo[] }>;
   workspaceGroupsCount: number;
+  onReorderWorkspaceGroup: SidebarProps["onReorderWorkspaceGroup"];
   deletingWorktreeIds: Set<string>;
   newAgentDraftWorkspaceId: string | null;
   startingDraftThreadWorkspaceId: string | null;
   threadsByWorkspace: SidebarProps["threadsByWorkspace"];
   threadParentById: SidebarProps["threadParentById"];
+  isThreadHidden?: SidebarProps["isThreadHidden"];
   threadStatusById: ThreadState["threadStatusById"];
   threadResumeLoadingById: Record<string, boolean>;
   threadListLoadingByWorkspace: SidebarProps["threadListLoadingByWorkspace"];
@@ -237,11 +239,13 @@ function buildPrimarySurface({
   workspaces,
   groupedWorkspaces,
   workspaceGroupsCount,
+  onReorderWorkspaceGroup,
   deletingWorktreeIds,
   newAgentDraftWorkspaceId,
   startingDraftThreadWorkspaceId,
   threadsByWorkspace,
   threadParentById,
+  isThreadHidden,
   threadStatusById,
   threadResumeLoadingById,
   threadListLoadingByWorkspace,
@@ -380,11 +384,13 @@ function buildPrimarySurface({
       workspaces,
       groupedWorkspaces,
       hasWorkspaceGroups: workspaceGroupsCount > 0,
+      onReorderWorkspaceGroup,
       deletingWorktreeIds,
       newAgentDraftWorkspaceId,
       startingDraftThreadWorkspaceId,
       threadsByWorkspace,
       threadParentById,
+      isThreadHidden,
       threadStatusById,
       threadListLoadingByWorkspace,
       threadListPagingByWorkspace,
@@ -944,11 +950,13 @@ export function useMainAppLayoutSurfaces({
   workspaces,
   groupedWorkspaces,
   workspaceGroupsCount,
+  onReorderWorkspaceGroup,
   deletingWorktreeIds,
   newAgentDraftWorkspaceId,
   startingDraftThreadWorkspaceId,
   threadsByWorkspace,
   threadParentById,
+  isThreadHidden,
   threadStatusById,
   threadResumeLoadingById,
   threadListLoadingByWorkspace,
@@ -1106,11 +1114,13 @@ export function useMainAppLayoutSurfaces({
     workspaces,
     groupedWorkspaces,
     workspaceGroupsCount,
+    onReorderWorkspaceGroup,
     deletingWorktreeIds,
     newAgentDraftWorkspaceId,
     startingDraftThreadWorkspaceId,
     threadsByWorkspace,
     threadParentById,
+    isThreadHidden,
     threadStatusById,
     threadResumeLoadingById,
     threadListLoadingByWorkspace,

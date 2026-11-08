@@ -50,7 +50,9 @@ import {
   deleteAgent,
   readAgentConfigToml,
   readImageAsDataUrl,
+  resolveDroppedDirectories,
   generateAgentDescription,
+  projectTimeSnapshot,
   writeAgentConfigToml,
   writeAgentMd,
 } from "./tauri";
@@ -58,6 +60,12 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
+
+it("scopes project time reports to an explicit workspace and range", async () => {
+  vi.mocked(invoke).mockResolvedValueOnce({ threads: [] });
+  await projectTimeSnapshot("project-one", 7);
+  expect(invoke).toHaveBeenCalledWith("project_time_snapshot", { workspaceId: "project-one", days: 7 });
+});
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -86,6 +94,12 @@ describe("tauri invoke wrappers", () => {
       }
       return undefined;
     });
+  });
+
+  it("resolves dropped directories locally using only the current drop's names", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce(["/tmp/project"]);
+    expect(await resolveDroppedDirectories(["project"])).toEqual(["/tmp/project"]);
+    expect(invoke).toHaveBeenCalledExactlyOnceWith("resolve_dropped_directories", { names: ["project"] });
   });
 
   it("uses path-only payload for addWorkspace", async () => {

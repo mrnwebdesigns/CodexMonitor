@@ -1,0 +1,70 @@
+# MRN Codex Monitor project
+
+## Purpose and scope
+
+Customize the open-source CodexMonitor desktop app for MRN Web Designs. The owner wants one place for client and internal projects, Codex chats and agents, Git, MCP tools, an embedded browser, and website annotations. Preserve the ability to review upstream updates and contribute enhancements later.
+
+The canonical source folder is `/Users/khofmeyer/Development/CodexMonitor`. This is a dedicated app project, separate from the broader Mac Apps workspace and from MRN Stack or client-site code.
+
+Read `AGENTS.md` and `docs/codebase-map.md` before making changes. This file describes the MRN local configuration; `README.md` describes upstream behavior.
+
+## Current checkout and parallel work
+
+- Local branch: `codex/mrn-local-evaluation`, tracking `origin/codex/mrn-local-evaluation`.
+- Private MRN repository (`origin`): `https://github.com/mrnwebdesigns/codex-monitor-mrn`.
+- Upstream: `https://github.com/Dimillian/CodexMonitor.git`.
+- The MRN source baseline is committed and saved on `main` and `codex/mrn-local-evaluation`. Inspect fresh `git status` before changing files and preserve later work.
+- The private repository preserves upstream history. `origin` is the default push destination; no upstream pull request is established.
+- `codex/chromium-preview` has a separate checkout under `.codex-worktrees/chromium-preview` with its own app identity and profile. Its browser remains the WebKit baseline; follow that branch's `docs/browser-lab.md` for experimental work.
+- GitHub Actions are disabled in the private repository. Credentials, profiles, settings, chat history, local reports, and build outputs are not part of the Git backup; maintain separate backups for runtime data.
+- Keep each chat scoped to an agreed feature and avoid concurrent edits to the same files. `src/App.tsx`, sidebar composition, workspace types, and shared backend command surfaces are common integration points.
+- Separate Git worktrees isolate concurrent coding work. Start MRN worktrees from a reviewed MRN commit; the upstream commit alone does not contain the custom features. Do not reset, stash, or commit another chat's work automatically unless the owner authorizes a shared baseline snapshot.
+- Coordinate app installation and restart: the installed local app and its profile are shared by these chats. A parallel feature chat should validate its own source without replacing the installed app while another chat is using it.
+
+## Local runtime
+
+- Installed app: `/Users/khofmeyer/Applications/Codex Monitor MRN Local.app`.
+- Bundle ID: `com.mrnwebdesigns.codexmonitor.local`.
+- Isolated Codex home: `.mrn-local/codex-home` in this repository.
+- App settings: `~/Library/Application Support/com.mrnwebdesigns.codexmonitor.local/`.
+- Build/install scripts, local configuration, validation reports, and rollback bundles: `.mrn-local/` (locally ignored). See `.mrn-local/README.md` before rebuilding or changing the runtime.
+- Use the local launch/build configuration; it selects the isolated profile and disables build telemetry. Do not copy credentials or expose profile contents in tracked files.
+- Automatic one-way history imports keep the isolated profile current with local Codex chats. Imports run on startup and every 30 seconds while Monitor runs; a closed Monitor catches up at its next launch. Read `docs/codex-history-import.md` for ownership and restart behavior.
+
+## Implemented MRN features
+
+- Clients/Internal workspace organization with friendly project names and canonical paths. The current configured inventory contains 68 workspaces; Morgan Development is intentionally omitted until the owner adds it again.
+- Sidebar sorting by name, recent activity, or saved order.
+- Indexed message search in the sidebar, including matching excerpts and older unloaded chats. Home → Search & storage shows index progress, file/database sizes, reusable index pages, free disk space, and safe pause/compact/clear/rebuild controls. Messages are indexed by default; tool output is opt-in. Source history is preserved. Included in the installed local build; signature, compiled code, automatic worker startup, and settings preservation are verified. Evidence and rollback locations: `.mrn-local/message-search-validation.json`. See `docs/message-search.md` for runtime requirements, coverage limits, and cleanup behavior.
+- Individual project colors: Settings → Projects includes eight preset colors, a named custom palette with a color picker/hex input, and a color selector for each project. Custom colors also appear under **Project color** in the sidebar context menu. Palette and project choices persist locally and update all mounted views immediately; removing a custom color clears its project assignments. Solid markers and theme-based tints preserve contrast in opaque and translucent modes. Included in the installed local build. Evidence and rollback location: `.mrn-local/custom-colors-validation.json`.
+- Sidebar group sorting with drag handles, insertion indicators, edge scrolling, and Alt + Up/Down keyboard controls. Group order persists through app settings and is shared with the Settings up/down controls. Ungrouped stays last; search results do not expose reorder controls.
+- Active Threads shows running/reviewing chats first, followed by up to six other chats updated in the last seven days. Each row shows the thread title above a smaller project label and opens that chat directly, including chats in worktrees/clones. It appears in every sidebar organization mode. Each entry has a remove button and a right-click **Remove from Active Threads** action; dismissal persists until newer activity in that chat. Hidden projects/chats stay excluded. Existing project dismissals and the area's collapse preference are preserved. Included in the installed local build; signature, exact embedded frontend assets, native code, isolated launcher, restart, visible Active Threads heading/thread rows, and preservation of all 68 workspaces/settings are verified. Evidence and rollback locations: `.mrn-local/active-threads-preview/installed-validation.json`.
+- Active Threads unread completion indicators are implemented in source: an accent dot and **Finished · unread** identify idle chats with unseen results. Unread state persists locally across restarts and clears when the owner opens or continues the chat. Completions in a background window remain unread until the owner returns to that chat. Running/reviewing indicators and recent-list limits remain in effect. This enhancement requires a coordinated rebuild/install of the shared local app. Source validation and visual-preview evidence: `.mrn-local/active-threads-unread-validation.json`.
+- Project home information: client, summary, website, notes, project type (WordPress, Mac app, web app, or other), hosting, SSH, Local Hub, and MainWP. Discover connections opens a draft for review and preserves manual overrides. Discovery reads project markers, Local Hub manifests, and exact SSH aliases; manifest hosting and SSH targets are configuration evidence, not verified live access. A loopback-only HTTP check distinguishes a responding local site from registration. MainWP uses the global `mainwp` MCP entry, validates `wpcontrol.mrndev.io`, resolves the exact website, performs one targeted sync, and requires fresh readback before reporting Connected. Discovery failures remain visible as unverified findings, and snapshots include their check time. App and daemon share the discovery implementation.
+- Project home time tracking: 7/30/90-day reports by day, Monday-based week, or thread, including project worktrees/clones and archived/resumed chats with available local transcripts. Recorded turn durations and explicitly labeled legacy/unfinished activity estimates appear in hours/minutes. A locally saved, adjustable human-work multiplier defaults to 4× and represents an assumption rather than measured human effort or time saved. The feature is implemented in source; installation is coordinated separately because chats share the local app.
+- Project visibility: right-click a project to hide it; use Hidden projects to show one or all. The preference persists locally and hides the whole project family, including its worktrees/clones and sidebar chat entries. Agents continue working.
+- Embedded browser with page-element selection, saved annotations, and screenshots that can be added to a chat draft. The owner considers browser annotations essential.
+- Image attachments accept file drops anywhere in the visible conversation pane, with a **Drop images to attach** indicator. Standalone new-chat composers retain input-area drops and image paste/picker support. macOS delegates file drops to WebKit so file promises can finish exporting; HEIC, TIFF, and other decodable formats are converted to PNG when needed. Imports show progress/errors and prevent premature sending. Attachments remain scoped to their chat or workspace draft; hidden conversations and disabled composers reject drops. The installed local build passes native PNG/HEIC/TIFF file drags, screenshot-style `NSFilePromiseProvider` export, image picker, and clipboard image paste checks; the clipboard was restored, fixtures removed, and no model messages sent. Dropover success is user-reported; the screenshot-thumbnail and Dropover applications were not separately manually retested. TypeScript, 1,125 frontend tests, the Rust directory-matching test, cargo check, native build, signature, exact embedded frontend assets, and preservation of all 68 workspaces/settings are verified. Evidence and rollback locations: `.mrn-local/image-drop-validation/final-verified.json`.
+- Guided Initialize Git review, proposed ignores, sensitive-file exclusions, optional initial commit, and opt-in GitHub creation/push. GitHub publishing is not automatic. Shared Git setup logic lives under `src-tauri/src/shared/git_ui_core/` and must retain app/daemon parity.
+- Portable MCP definitions and MRN guidance in the separate profile. Use secure references and the owner's existing service-specific access rules.
+
+Live hosting discovery also checks documented Kinsta and SiteGround response markers using a bounded public HTTP HEAD request. It excludes private addresses, pins DNS resolution, sends no authentication, follows no redirects, and does not mistake a generic Cloudflare header for the origin provider. A SiteGround CDN marker is labelled as CDN evidence; configured provider suggestions remain explicitly unverified when live evidence is unavailable.
+
+## Known limitations and validation
+
+- Browser extension hosting is not implemented. 1Password Universal Autofill did not fill either field in the synthetic test. The app is ad-hoc signed; proper Developer ID signing remains an untested possible remedy. The owner does not have a paid Apple Developer membership. Do not claim verified Autofill support.
+- Initial access mode in Monitor is read-only. Credential access or project setup does not authorize production changes.
+- Group sorting is included in the installed local build. Bundle signature, isolated-profile launcher, native launch, and preservation of all 68 workspaces are verified. Browser and automated drag/keyboard checks pass; dragging in the installed native window has not been retested. Evidence: `.mrn-local/group-sort-validation.json`.
+- Current visibility build: 1,083 frontend tests pass; typecheck and lint of the touched components pass. The native bundle is installed, its signature and compiled sections are verified, and the local app launches with all 68 workspaces and settings preserved. Evidence and rollback location: `.mrn-local/hidden-count-validation.json`.
+- Visibility persistence/restoration, badge/list consistency with incomplete grouping, independent Hidden search, and exclusion from sidebar lists are covered by automated tests. A live native click-through of restoration remains unverified.
+- Git setup validation evidence: `.mrn-local/git-setup-validation.json`. Prior UI checks used synthetic temporary fixtures; no real client project was initialized or published by those checks.
+- Verification reports describe a particular source/build state. Recheck current behavior and run the validation matrix in `AGENTS.md` for each new change.
+
+## Useful task boundaries
+
+- Sidebar/project organization: `src/features/app/components/`, `src/features/app/hooks/`, workspace domain helpers, and `src/styles/sidebar.css`.
+- Project home: workspace home components and project information hook.
+- Browser/annotations: `src/features/browser/`, `src-tauri/src/browser/`, and `src/styles/browser.css`.
+- Git initialization: Git components/hooks and the shared Git setup core.
+
+Use `docs/codebase-map.md` for exact file ownership and IPC routes. Keep this brief current when the project's behavior or local workflow changes.

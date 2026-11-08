@@ -174,7 +174,7 @@ export function buildResumeHydrationPlan({
           ? localItems
           : mergeThreadItems(items, localItems)
       : localItems;
-  const preview = asString(thread.preview ?? "");
+  const preview = asString(thread.name ?? thread.title ?? "").trim() || asString(thread.preview ?? "");
   const customName = getCustomName(workspaceId, threadId);
   const threadName =
     !customName && preview ? previewThreadName(preview, "New Agent") : null;

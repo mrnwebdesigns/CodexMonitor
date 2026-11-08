@@ -3,6 +3,7 @@ mod crud_persistence;
 mod git_orchestration;
 mod helpers;
 mod io;
+mod project_discovery;
 mod runtime_codex_args;
 mod worktree;
 
@@ -17,6 +18,7 @@ pub(crate) use io::{
     get_open_app_icon_core, list_workspace_files_core, open_workspace_in_core,
     read_workspace_file_core,
 };
+pub(crate) use project_discovery::discover_project_core;
 pub(crate) use runtime_codex_args::{
     set_workspace_runtime_codex_args_core, WorkspaceRuntimeCodexArgsResult,
 };

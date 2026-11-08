@@ -23,6 +23,16 @@ pub(crate) struct ReadWorkspaceFileRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct DiscoverProjectRequest {
+    pub(crate) workspace_id: String,
+    #[serde(default)]
+    pub(crate) website: String,
+    #[serde(default)]
+    pub(crate) project_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct SetWorkspaceRuntimeCodexArgsRequest {
     pub(crate) workspace_id: String,
     pub(crate) codex_args: Option<String>,
@@ -58,6 +68,13 @@ pub(crate) struct AddWorktreeRequest {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WorkspaceIdRequest {
     pub(crate) workspace_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProjectTimeRequest {
+    pub(crate) workspace_id: String,
+    pub(crate) days: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

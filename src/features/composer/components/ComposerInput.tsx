@@ -148,10 +148,8 @@ export function ComposerInput({
   const {
     dropTargetRef,
     isDragOver,
-    handleDragOver,
-    handleDragEnter,
-    handleDragLeave,
-    handleDrop,
+    imageDropError,
+    isImportingImages,
     handlePaste,
   } = useComposerImageDrop({
     disabled,
@@ -205,6 +203,14 @@ export function ComposerInput({
     [handlePaste, onTextPaste],
   );
 
+  const handleTextareaKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isImportingImages && event.key === "Enter" && (!event.shiftKey || event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      return;
+    }
+    onKeyDown(event);
+  }, [isImportingImages, onKeyDown]);
+
   const handleMobileAttachClick = useCallback(() => {
     if (disabled || !onAddAttachment) {
       return;
@@ -231,16 +237,14 @@ export function ComposerInput({
       <div
         className={`composer-input-area${isDragOver ? " is-drag-over" : ""}`}
         ref={dropTargetRef}
-        onDragOver={handleDragOver}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <ComposerAttachments
           attachments={attachments}
           disabled={disabled}
           onRemoveAttachment={onRemoveAttachment}
         />
+        {imageDropError && <div className="composer-drop-error" role="alert">{imageDropError}</div>}
+        {isImportingImages && <div className="composer-drop-status" role="status">Importing image…</div>}
         <div className="composer-input-row">
           <button
             type="button"
@@ -282,11 +286,7 @@ export function ComposerInput({
             onChange={handleTextareaChange}
             onSelect={handleTextareaSelect}
             disabled={disabled}
-            onKeyDown={onKeyDown}
-            onDragOver={handleDragOver}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
+            onKeyDown={handleTextareaKeyDown}
             onPaste={handleTextareaPaste}
           />
           <div className="composer-input-actions">
@@ -327,7 +327,7 @@ export function ComposerInput({
                 canStop && isProcessing ? " is-loading" : ""
               }`}
               onClick={handleActionClick}
-              disabled={(disabled && !canStop) || isDictationBusy || (!canStop && !canSend)}
+              disabled={(disabled && !canStop) || isDictationBusy || (!canStop && (!canSend || isImportingImages))}
               aria-label={canStop ? "Stop" : sendLabel}
               title={canStop ? "Stop" : sendLabel}
             >

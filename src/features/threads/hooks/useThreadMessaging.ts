@@ -201,6 +201,7 @@ export function useThreadMessaging({
         timestamp,
       });
       markProcessing(threadId, true);
+      dispatch({ type: "markUnread", threadId, hasUnread: false });
       safeMessageActivity();
       onDebug?.({
         id: `${Date.now()}-${shouldSteer ? "client-turn-steer" : "client-turn-start"}`,

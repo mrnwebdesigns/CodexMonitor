@@ -8,6 +8,7 @@ import ListTree from "lucide-react/dist/esm/icons/list-tree";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import Search from "lucide-react/dist/esm/icons/search";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ProjectSortKey } from "@/features/workspaces/domain/projectActivity";
 import type { ThreadListOrganizeMode, ThreadListSortKey } from "../../../types";
 import {
   MenuTrigger,
@@ -25,6 +26,8 @@ type SidebarHeaderProps = {
   onSetThreadListSortKey: (sortKey: ThreadListSortKey) => void;
   threadListOrganizeMode: ThreadListOrganizeMode;
   onSetThreadListOrganizeMode: (organizeMode: ThreadListOrganizeMode) => void;
+  projectSortKey: ProjectSortKey;
+  onSetProjectSortKey: (key: ProjectSortKey) => void;
   onRefreshAllThreads: () => void;
   refreshDisabled?: boolean;
   refreshInProgress?: boolean;
@@ -39,6 +42,8 @@ export function SidebarHeader({
   onSetThreadListSortKey,
   threadListOrganizeMode,
   onSetThreadListOrganizeMode,
+  projectSortKey,
+  onSetProjectSortKey,
   onRefreshAllThreads,
   refreshDisabled = false,
   refreshInProgress = false,
@@ -209,7 +214,19 @@ export function SidebarHeader({
                 Thread list
               </PopoverMenuItem>
               <div className="sidebar-sort-divider" aria-hidden />
-              <div className="sidebar-sort-section-label">Sort by</div>
+              <div className="sidebar-sort-section-label">Project order</div>
+              {([ ["name_asc", "Name A–Z"], ["name_desc", "Name Z–A"], ["activity", "Recent activity"], ["saved", "Saved order"] ] as const).map(([key, label]) => <PopoverMenuItem
+                key={key}
+                className="sidebar-sort-option"
+                role="menuitemradio"
+                aria-checked={projectSortKey === key}
+                active={projectSortKey === key}
+                disabled={threadListOrganizeMode === "threads_only"}
+                onClick={() => { sortMenu.close(); onSetProjectSortKey(key); }}
+                icon={<ArrowDownUp aria-hidden />}
+              >{label}</PopoverMenuItem>)}
+              <div className="sidebar-sort-divider" aria-hidden />
+              <div className="sidebar-sort-section-label">Chat order</div>
               <PopoverMenuItem
                 className="sidebar-sort-option"
                 role="menuitemradio"

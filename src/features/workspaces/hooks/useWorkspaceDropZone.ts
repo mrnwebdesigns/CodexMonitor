@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { subscribeWindowDragDrop } from "../../../services/dragDrop";
+import { resolveDroppedDirectories } from "@services/tauri";
 
 function isDragFileTransfer(types: readonly string[] | undefined) {
   if (!types || types.length === 0) {
@@ -175,7 +176,7 @@ export function useWorkspaceDropZone({
     }
   };
 
-  const handleDrop = (event: DragEvent<HTMLElement>) => {
+  const handleDrop = async (event: DragEvent<HTMLElement>) => {
     if (disabled) {
       return;
     }
@@ -194,7 +195,17 @@ export function useWorkspaceDropZone({
     const paths = [...files, ...itemFiles]
       .map((file) => (file as File & { path?: string }).path ?? "")
       .filter(Boolean);
-    emitPaths(paths);
+    if (paths.length > 0) {
+      emitPaths(paths);
+      return;
+    }
+    const entryNames = items.map((item) => item.webkitGetAsEntry?.())
+      .filter((entry) => entry?.isDirectory).map((entry) => entry!.name);
+    const names = Array.from(new Set([...files, ...itemFiles].map((file) => file.name).concat(entryNames).filter(Boolean)));
+    if (names.length > 0) {
+      try { emitPaths(await resolveDroppedDirectories(names)); }
+      catch (error) { console.error("Failed to resolve dropped directories", error); }
+    }
   };
 
   return {

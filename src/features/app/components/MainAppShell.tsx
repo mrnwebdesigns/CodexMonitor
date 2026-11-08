@@ -1,4 +1,4 @@
-import { lazy, Suspense, type CSSProperties, type ComponentProps, type RefObject } from "react";
+import { lazy, Suspense, type CSSProperties, type ComponentProps, type RefObject, ReactNode } from "react";
 import { AppLayout } from "@app/components/AppLayout";
 import { AppModals } from "@app/components/AppModals";
 import type { AppModalsProps } from "@app/components/AppModals";
@@ -33,6 +33,8 @@ type MainAppShellProps = {
     onPullRequestCommentsChange: ComponentProps<typeof GitHubPanelData>["onPullRequestCommentsChange"];
   };
   appLayoutProps: ComponentProps<typeof AppLayout>;
+  browserPanelNode?: ReactNode;
+  browserToggleNode?: ReactNode;
   appModalsProps: AppModalsProps;
   showMobileSetupWizard: boolean;
   mobileSetupWizardProps: ComponentProps<typeof MobileServerSetupWizard>;
@@ -47,6 +49,8 @@ export function MainAppShell({
   shouldLoadGitHubPanelData,
   gitHubPanelDataProps,
   appLayoutProps,
+  browserPanelNode,
+  browserToggleNode,
   appModalsProps,
   showMobileSetupWizard,
   mobileSetupWizardProps,
@@ -61,7 +65,7 @@ export function MainAppShell({
           <GitHubPanelData {...gitHubPanelDataProps} />
         </Suspense>
       ) : null}
-      <AppLayout {...appLayoutProps} />
+      <AppLayout {...appLayoutProps} browserPanelNode={browserPanelNode} topbarActionsNode={<>{appLayoutProps.topbarActionsNode}{browserToggleNode}</>} />
       <AppModals {...appModalsProps} />
       {showMobileSetupWizard ? <MobileServerSetupWizard {...mobileSetupWizardProps} /> : null}
     </div>

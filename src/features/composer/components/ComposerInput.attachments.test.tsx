@@ -31,7 +31,8 @@ function ComposerHarness({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
-    <div>
+    <div data-composer-drop-scope>
+      <div data-testid="thread-messages">Conversation history</div>
       <ComposerInput
         text={text}
         disabled={disabled}
@@ -163,6 +164,68 @@ function setMockFileReader() {
 }
 
 describe("Composer attachments integration", () => {
+  it("attaches images dropped on conversation messages to the current draft", async () => {
+    const harness = renderComposerHarness({ activeThreadId: "thread-1", activeWorkspaceId: "ws-1" });
+    const messages = harness.container.querySelector<HTMLElement>("[data-testid='thread-messages']")!;
+    const image = new File(["data"], "conversation.png", { type: "image/png" });
+    (image as File & { path?: string }).path = "/tmp/conversation.png";
+
+    await act(async () => {
+      dispatchDrop(messages, [image]);
+    });
+
+    expect(getAttachmentNames(harness.container)).toEqual(["conversation.png"]);
+    harness.rerender({ activeThreadId: "thread-2", activeWorkspaceId: "ws-1" });
+    expect(getAttachmentNames(harness.container)).toEqual([]);
+    harness.unmount();
+  });
+
+  it("reads a textarea drop once when files also appear in transfer items", async () => {
+    const restoreFileReader = setMockFileReader();
+    const read = vi.spyOn(FileReader.prototype, "readAsDataURL");
+    const harness = renderComposerHarness({ activeThreadId: "thread-1", activeWorkspaceId: "ws-1" });
+    const image = new File(["data"], "photo.png", { type: "image/png" });
+
+    await act(async () => {
+      dispatchDrop(getTextarea(harness.container), [image], [{ kind: "file", getAsFile: () => image }]);
+    });
+
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(getAttachmentNames(harness.container)).toEqual(["Pasted image"]);
+    harness.unmount();
+    read.mockRestore();
+    restoreFileReader();
+  });
+
+  it("keeps all images when a drop mixes native paths and inline files", async () => {
+    const restoreFileReader = setMockFileReader();
+    const harness = renderComposerHarness({ activeThreadId: "thread-1", activeWorkspaceId: "ws-1" });
+    const native = new File(["data"], "native.png", { type: "image/png" });
+    (native as File & { path?: string }).path = "/tmp/native.png";
+    const inline = new File(["data"], "inline.jpg", { type: "image/jpeg" });
+
+    await act(async () => {
+      dispatchDrop(getTextarea(harness.container), [native, inline]);
+    });
+
+    expect(getAttachmentNames(harness.container)).toEqual(["native.png", "Pasted image"]);
+    harness.unmount();
+    restoreFileReader();
+  });
+
+  it("ignores conversation drops while the composer is disabled", async () => {
+    const harness = renderComposerHarness({ activeThreadId: "thread-1", activeWorkspaceId: "ws-1", disabled: true });
+    const image = new File(["data"], "photo.png", { type: "image/png" });
+    (image as File & { path?: string }).path = "/tmp/photo.png";
+
+    await act(async () => {
+      dispatchDrop(harness.container.querySelector<HTMLElement>("[data-testid='thread-messages']")!, [image]);
+    });
+
+    expect(getAttachmentNames(harness.container)).toEqual([]);
+    harness.unmount();
+  });
+
   it("attaches dropped image files, filters non-images, and dedupes paths", async () => {
     const harness = renderComposerHarness({
       activeThreadId: "thread-1",

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) const METHOD_GET_GIT_STATUS: &str = "get_git_status";
+pub(crate) const METHOD_PREVIEW_GIT_INIT: &str = "preview_git_init";
 pub(crate) const METHOD_INIT_GIT_REPO: &str = "init_git_repo";
 pub(crate) const METHOD_CREATE_GITHUB_REPO: &str = "create_github_repo";
 pub(crate) const METHOD_STAGE_GIT_FILE: &str = "stage_git_file";
@@ -53,13 +54,17 @@ pub(crate) struct InitGitRepoRequest {
     pub(crate) workspace_id: String,
     pub(crate) branch: String,
     pub(crate) force: Option<bool>,
+    pub(crate) setup: Option<crate::shared::git_ui_core::GitInitSelection>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct InitGitRepoRequiredRequest {
+pub(crate) struct PreviewGitInitRequest {
     pub(crate) workspace_id: String,
+    pub(crate) root: String,
     pub(crate) branch: String,
+    #[serde(default)]
+    pub(crate) excluded_paths: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -133,4 +138,25 @@ pub(crate) struct WorkspaceNameRequest {
 pub(crate) struct GenerateCommitMessageRequest {
     pub(crate) workspace_id: String,
     pub(crate) commit_message_model_id: Option<String>,
+}
+
+#[cfg(test)]
+mod setup_contract_tests {
+    use super::*;
+    #[test]
+    fn reviewed_setup_payload_round_trips_and_legacy_requests_cannot_supply_an_implicit_review() {
+        let old: InitGitRepoRequest = serde_json::from_value(
+            serde_json::json!({"workspaceId":"fixture","branch":"main","force":true}),
+        )
+        .unwrap();
+        assert!(old.setup.is_none());
+        let request: InitGitRepoRequest = serde_json::from_value(serde_json::json!({"workspaceId":"fixture","branch":"main","setup":{"root":"theme","excludedPaths":["notes.txt"],"fingerprint":"fixture-review"}})).unwrap();
+        let encoded = to_params(&request).unwrap();
+        assert_eq!(encoded["setup"]["root"], "theme");
+        assert_eq!(encoded["setup"]["excludedPaths"][0], "notes.txt");
+        let preview: PreviewGitInitRequest =
+            from_params(&serde_json::json!({"workspaceId":"fixture","root":".","branch":"main"}))
+                .unwrap();
+        assert!(preview.excluded_paths.is_empty());
+    }
 }

@@ -4,6 +4,7 @@ import type {
   RateLimitSnapshot,
 } from "../../../types";
 import { HomeActions } from "./HomeActions";
+import { SearchStorageSection } from "@/features/search/components/SearchStorageSection";
 import { HomeLatestAgentsSection } from "./HomeLatestAgentsSection";
 import { HomeUsageSection } from "./HomeUsageSection";
 import type {
@@ -82,6 +83,7 @@ export function Home({
         usageWorkspaceId={usageWorkspaceId}
         usageWorkspaceOptions={usageWorkspaceOptions}
       />
+      <SearchStorageSection />
     </div>
   );
 }

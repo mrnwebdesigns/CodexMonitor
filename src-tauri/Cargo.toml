@@ -22,7 +22,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
-tauri = { version = "2.10.3", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png"] }
+tauri = { version = "2.10.3", features = ["protocol-asset", "macos-private-api", "tray-icon", "image-png", "unstable"] }
 tauri-plugin-liquid-glass = "0.1"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
@@ -41,6 +41,7 @@ ignore = "0.4.25"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 libc = "0.2"
 chrono = { version = "0.4", features = ["clock"] }
+zstd = "0.13"
 shell-words = "1.1"
 toml_edit = "0.20.2"
 
@@ -54,7 +55,7 @@ portable-pty = "0.8"
 
 [target."cfg(target_os = \"macos\")".dependencies]
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSResponder", "NSWindow"] }
+objc2-app-kit = { version = "0.3", features = ["NSAppearance", "NSResponder", "NSWindow", "NSImage", "NSBitmapImageRep"] }
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 objc2-av-foundation = { version = "0.3", features = ["AVCaptureDevice", "AVMediaFormat"] }
 block2 = "0.6"

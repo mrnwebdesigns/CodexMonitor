@@ -1,4 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { MessageSearchAction, MessageSearchResponse, MessageSearchStatus } from "@/features/search/messageSearchTypes";
+
+export async function searchMessages(query: string, workspaceIds: string[], includeTools = false): Promise<MessageSearchResponse> {
+  return invoke("search_messages", { query, workspaceIds, includeTools });
+}
+
+export async function getMessageSearchStatus(): Promise<MessageSearchStatus> {
+  return invoke("message_search_status");
+}
+
+export async function controlMessageSearch(action: MessageSearchAction): Promise<MessageSearchStatus> {
+  return invoke("message_search_control", { action });
+}
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { Options as NotificationOptions } from "@tauri-apps/plugin-notification";
 import type {
@@ -8,6 +21,7 @@ import type {
   DictationModelStatus,
   DictationSessionState,
   LocalUsageSnapshot,
+  ProjectTimeSnapshot,
   TcpDaemonStatus,
   TailscaleDaemonCommandPreview,
   TailscaleStatus,
@@ -16,7 +30,10 @@ import type {
   WorkspaceInfo,
   AppMention,
   WorkspaceSettings,
+  ProjectDiscovery,
+  ProjectType,
 } from "../types";
+
 import type {
   GitFileDiff,
   GitFileStatus,
@@ -35,6 +52,10 @@ function isMissingTauriInvokeError(error: unknown) {
     (error.message.includes("reading 'invoke'") ||
       error.message.includes("reading \"invoke\""))
   );
+}
+
+export async function discoverProject(workspaceId: string, website: string, projectType: ProjectType): Promise<ProjectDiscovery> {
+  return invoke<ProjectDiscovery>("discover_project", { workspaceId, website, projectType });
 }
 
 export async function pickWorkspacePath(): Promise<string | null> {
@@ -326,6 +347,12 @@ export async function removeWorkspace(id: string): Promise<void> {
   return invoke("remove_workspace", { id });
 }
 
+// App-only: the drag pasteboard belongs to this desktop, including when the
+// active Codex workspace uses a remote daemon.
+export async function resolveDroppedDirectories(names: string[]): Promise<string[]> {
+  return invoke<string[]>("resolve_dropped_directories", { names });
+}
+
 export async function removeWorktree(id: string): Promise<void> {
   return invoke("remove_worktree", { id });
 }
@@ -566,8 +593,27 @@ export async function getGitStatus(workspace_id: string): Promise<{
   return invoke("get_git_status", { workspaceId: workspace_id });
 }
 
+export type GitInitSelection = { root: string; excludedPaths: string[]; fingerprint: string };
+export type GitInitFile = { path: string; bytes: number; reason: string | null };
+export type GitInitReview = {
+  root: string;
+  relativeRoot: string;
+  profile: string;
+  suggestedRoots: string[];
+  existingRepo: string | null;
+  author: string | null;
+  included: GitInitFile[];
+  excluded: GitInitFile[];
+  ignoreContent: string;
+  blockers: string[];
+  fingerprint: string;
+};
+export function previewGitInit(workspaceId: string, root: string, branch: string, excludedPaths: string[]): Promise<GitInitReview> {
+  return invoke("preview_git_init", { workspaceId, root, branch, excludedPaths });
+}
+
 export type InitGitRepoResponse =
-  | { status: "initialized"; commitError?: string }
+  | { status: "initialized"; commitError?: string; relativeRoot?: string; initialCommit?: string }
   | { status: "already_initialized" }
   | { status: "needs_confirmation"; entryCount: number };
 
@@ -575,8 +621,9 @@ export async function initGitRepo(
   workspaceId: string,
   branch: string,
   force = false,
+  setup?: GitInitSelection,
 ): Promise<InitGitRepoResponse> {
-  return invoke<InitGitRepoResponse>("init_git_repo", { workspaceId, branch, force });
+  return invoke<InitGitRepoResponse>("init_git_repo", { workspaceId, branch, force, setup });
 }
 
 export type CreateGitHubRepoResponse =
@@ -728,6 +775,13 @@ export async function localUsageSnapshot(
     payload.workspacePath = workspacePath;
   }
   return invoke("local_usage_snapshot", payload);
+}
+
+export async function projectTimeSnapshot(
+  workspaceId: string,
+  days = 30,
+): Promise<ProjectTimeSnapshot> {
+  return invoke("project_time_snapshot", { workspaceId, days });
 }
 
 export async function getModelList(workspaceId: string) {
@@ -1194,3 +1248,12 @@ export async function sendNotification(
 
   await attemptFallback();
 }
+
+// Desktop browser controls are local UI commands, including in remote daemon mode.
+import type { BrowserAction, BrowserBounds } from "@/features/browser/browserTypes";
+export const browserNavigate = (url: string, bounds: BrowserBounds) => invoke<void>("browser_navigate", { url, bounds });
+export const browserGetUrl = () => invoke<string | null>("browser_get_url");
+export const browserSetBounds = (bounds: BrowserBounds) => invoke<void>("browser_set_bounds", { bounds });
+export const browserSetVisible = (visible: boolean) => invoke<void>("browser_set_visible", { visible });
+export const browserAction = (action: BrowserAction) => invoke<void>("browser_action", { action });
+export const browserCapture = () => invoke<string>("browser_capture");

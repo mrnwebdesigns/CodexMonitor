@@ -97,10 +97,42 @@ pub(crate) async fn get_git_status(
 }
 
 #[tauri::command]
+pub(crate) async fn preview_git_init(
+    workspace_id: String,
+    root: String,
+    branch: String,
+    excluded_paths: Vec<String>,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<Value, String> {
+    let request = git_rpc::PreviewGitInitRequest {
+        workspace_id: workspace_id.clone(),
+        root: root.clone(),
+        branch: branch.clone(),
+        excluded_paths: excluded_paths.clone(),
+    };
+    try_remote_value!(
+        state,
+        app,
+        git_rpc::METHOD_PREVIEW_GIT_INIT,
+        git_remote_params(&request)?
+    );
+    git_ui_core::preview_git_init_core(
+        &state.workspaces,
+        workspace_id,
+        root,
+        branch,
+        excluded_paths,
+    )
+    .await
+}
+
+#[tauri::command]
 pub(crate) async fn init_git_repo(
     workspace_id: String,
     branch: String,
     force: Option<bool>,
+    setup: Option<git_ui_core::GitInitSelection>,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<Value, String> {
@@ -108,6 +140,7 @@ pub(crate) async fn init_git_repo(
         workspace_id: workspace_id.clone(),
         branch: branch.clone(),
         force,
+        setup: setup.clone(),
     };
     try_remote_value!(
         state,
@@ -120,6 +153,7 @@ pub(crate) async fn init_git_repo(
         workspace_id,
         branch,
         force.unwrap_or(false),
+        setup,
     )
     .await
 }

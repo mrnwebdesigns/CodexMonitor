@@ -12,6 +12,7 @@ import "./styles/sidebar.css";
 import "./styles/home.css";
 import "./styles/workspace-home.css";
 import "./styles/main.css";
+import "./styles/browser.css";
 import "./styles/messages.css";
 import "./styles/approval-toasts.css";
 import "./styles/error-toasts.css";

@@ -1,10 +1,12 @@
 import type { MouseEvent } from "react";
 
 import type { WorkspaceInfo } from "../../../types";
+import { sidebarColorStyle, type SidebarColor } from "@app/utils/sidebarColors";
 
 type WorkspaceCardProps = {
   workspace: WorkspaceInfo;
   workspaceName?: React.ReactNode;
+  color?: SidebarColor;
   summary?: string | null;
   isActive: boolean;
   isCollapsed: boolean;
@@ -26,6 +28,7 @@ type WorkspaceCardProps = {
 export function WorkspaceCard({
   workspace,
   workspaceName,
+  color,
   summary = null,
   isActive,
   isCollapsed,
@@ -44,6 +47,8 @@ export function WorkspaceCard({
     <div className="workspace-card">
       <div
         className={`workspace-row ${isActive ? "active" : ""}`}
+        data-project-color={color}
+        style={sidebarColorStyle(color)}
         role="button"
         tabIndex={0}
         onClick={() => onSelectWorkspace(workspace.id)}

@@ -347,6 +347,9 @@ export function useMainAppGitState({
     onRefreshGitStatus: refreshGitStatus,
     onRefreshGitDiffs: refreshGitDiffs,
     onClearGitRootCandidates: clearGitRootCandidates,
+    onGitRootInitialized: async (id, root) => {
+      await updateWorkspaceSettings(id, { gitRoot: root === "." ? null : root });
+    },
     onError: alertError,
   });
 

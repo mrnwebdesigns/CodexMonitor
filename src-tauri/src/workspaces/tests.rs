@@ -59,6 +59,7 @@ fn workspace_with_id_and_kind(
             launch_scripts: None,
             worktree_setup_script: None,
             worktrees_folder: None,
+            project_info: None,
         },
     }
 }

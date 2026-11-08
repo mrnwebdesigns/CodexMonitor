@@ -68,7 +68,7 @@ export function reduceThreadLifecycle(
         },
         threadStatusById: {
           ...state.threadStatusById,
-          [action.threadId]: {
+          [action.threadId]: state.threadStatusById[action.threadId] ?? {
             isProcessing: false,
             hasUnread: false,
             isReviewing: false,

@@ -1,8 +1,23 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
+import type { WorkspaceInfo } from "@/types";
+import { HIDDEN_PROJECTS_STORAGE_KEY } from "../hooks/useProjectVisibility";
+import { PROJECT_COLORS_STORAGE_KEY } from "@app/hooks/useProjectColors";
 import { Sidebar } from "./Sidebar";
+
+type NativeMenuItem = { text: string; action?: () => void; items?: NativeMenuItem[] };
+const nativeMenuNew = vi.hoisted(() => vi.fn(async (_options: { items: NativeMenuItem[] }) => ({ popup: vi.fn() })));
+vi.mock("@tauri-apps/api/menu", () => ({
+  Menu: { new: nativeMenuNew },
+  MenuItem: { new: async (options: NativeMenuItem) => options },
+  CheckMenuItem: { new: async (options: NativeMenuItem) => options },
+  Submenu: { new: async (options: NativeMenuItem) => options },
+}));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({}) }));
+
+beforeEach(() => localStorage.clear());
 
 afterEach(() => {
   if (vi.isFakeTimers()) {
@@ -70,6 +85,325 @@ const baseProps = {
 };
 
 describe("Sidebar", () => {
+  it("updates active thread colors from the project menu and opens the thread directly", async () => {
+    nativeMenuNew.mockClear();
+    const project = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const props = {
+      ...baseProps, workspaces: [project],
+      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
+      threadsByWorkspace: { client: [{ id: "task", name: "Task", updatedAt: Date.now() }] },
+    };
+    const view = render(<Sidebar {...props} />);
+    const row = view.container.querySelector<HTMLElement>(".workspace-row")!;
+    fireEvent.contextMenu(row);
+    await waitFor(() => expect(nativeMenuNew).toHaveBeenCalledTimes(1));
+    const colorItems = () => nativeMenuNew.mock.lastCall![0].items.find((item) => item.text === "Project color")!.items!;
+    act(() => colorItems().find((item) => item.text === "Purple")!.action!());
+    const activeLink = screen.getByRole("button", { name: "Open thread: Task (Client Alpha)" });
+    expect(row.dataset.projectColor).toBe("purple");
+    expect(activeLink.dataset.projectColor).toBe("purple");
+    expect(row.style.getPropertyValue("--sidebar-item-color")).toBe(activeLink.style.getPropertyValue("--sidebar-item-color"));
+    fireEvent.click(activeLink);
+    expect(baseProps.onSelectThread).toHaveBeenCalledWith("client", "task");
+    expect(JSON.parse(localStorage.getItem(PROJECT_COLORS_STORAGE_KEY) || "{}")).toEqual({ client: "purple" });
+    view.unmount();
+    const next = render(<Sidebar {...props} activeWorkspaceId="client" />);
+    expect(next.container.querySelector<HTMLElement>(".workspace-row.active")?.dataset.projectColor).toBe("purple");
+    fireEvent.contextMenu(next.container.querySelector(".workspace-row")!);
+    await waitFor(() => expect(nativeMenuNew).toHaveBeenCalledTimes(2));
+    act(() => colorItems().find((item) => item.text === "None")!.action!());
+    expect(next.container.querySelector("[data-project-color]")).toBeNull();
+  });
+
+  function renderSortableGroups(onReorderWorkspaceGroup = vi.fn().mockResolvedValue(true)) {
+    const projects = ["Clients", "Internal", "Other", "Ungrouped"].map((name) => ({
+      id: name, name: `${name} project`, path: `/tmp/${name}`, connected: true,
+      settings: { sidebarCollapsed: false },
+    }));
+    const props = {
+      ...baseProps,
+      workspaces: projects,
+      groupedWorkspaces: projects.map((workspace) => ({
+        id: workspace.id === "Ungrouped" ? null : workspace.id,
+        name: workspace.id, workspaces: [workspace],
+      })),
+      hasWorkspaceGroups: true,
+      onReorderWorkspaceGroup,
+    };
+    const view = render(<Sidebar {...props} />);
+    const sections = Array.from(view.container.querySelectorAll<HTMLElement>(".workspace-group"));
+    sections.forEach((section, index) => {
+      vi.spyOn(section, "getBoundingClientRect").mockReturnValue(new DOMRect(0, index * 100, 250, 90));
+    });
+    vi.spyOn(view.container.querySelector(".sidebar-body")!, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 250, 500));
+    const handle = screen.getByRole("button", { name: "Reorder Clients group" });
+    handle.setPointerCapture = vi.fn();
+    return { ...view, props, handle, sections, onReorderWorkspaceGroup };
+  }
+
+  it("drag sorts collapsed groups without toggling them or changing projects", async () => {
+    localStorage.setItem("codexmonitor.collapsedGroups", '["Clients"]');
+    const { handle, sections, onReorderWorkspaceGroup } = renderSortableGroups();
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 20, clientY: 20 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 20, clientY: 270 });
+    expect(sections[0].className).toContain("is-dragging");
+    expect(sections[2].dataset.dropPosition).toBe("after");
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 20, clientY: 270 });
+    await waitFor(() => expect(onReorderWorkspaceGroup).toHaveBeenCalledWith("Clients", "Other", "after"));
+    expect(onReorderWorkspaceGroup).toHaveBeenCalledTimes(1);
+    expect(sections[0].querySelector(".workspace-group-list")?.className).toContain("collapsed");
+    expect(localStorage.getItem("codexmonitor.collapsedGroups")).toBe('["Clients"]');
+    expect(sections[2].dataset.dropPosition).toBeUndefined();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Clients moved after Other."));
+  });
+
+  it.each(["escape", "cancel", "outside", "click", "ungrouped"])("does not save when a drag ends with %s", (ending) => {
+    const { handle, sections, onReorderWorkspaceGroup } = renderSortableGroups();
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 20, clientY: 20 });
+    if (ending !== "click") {
+      fireEvent.pointerMove(window, { pointerId: 1, clientX: 20, clientY: 270 });
+    }
+    if (ending === "escape") fireEvent.keyDown(handle, { key: "Escape" });
+    if (ending === "cancel") fireEvent.pointerCancel(window, { pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: ending === "outside" ? 500 : 20,
+      clientY: ending === "click" ? 20 : ending === "ungrouped" ? 350 : 270 });
+    expect(onReorderWorkspaceGroup).not.toHaveBeenCalled();
+    expect(sections[0].className).not.toContain("is-dragging");
+  });
+
+  it("supports keyboard sorting and reports persistence failures", async () => {
+    const onReorder = vi.fn().mockRejectedValue(new Error("disk full"));
+    const { handle } = renderSortableGroups(onReorder);
+    fireEvent.keyDown(handle, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledWith("Clients", "Internal", "after");
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not save group order"));
+    expect(handle.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByRole("button", { name: "Reorder Ungrouped group" })).toBeNull();
+  });
+
+  it("retains keyboard focus and prevents overlapping saves", async () => {
+    let finish!: (value: boolean) => void;
+    const onReorder = vi.fn().mockReturnValue(new Promise<boolean>((resolve) => { finish = resolve; }));
+    const { handle } = renderSortableGroups(onReorder);
+    handle.focus();
+    fireEvent.keyDown(handle, { key: "ArrowDown", altKey: true });
+    expect(handle.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.keyDown(handle, { key: "ArrowDown", altKey: true });
+    expect(onReorder).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(handle);
+    finish(true);
+    await waitFor(() => expect(handle.getAttribute("aria-disabled")).toBe("false"));
+    expect(document.activeElement).toBe(handle);
+  });
+
+  it("disables sorting in filtered search results", async () => {
+    renderSortableGroups();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle search" }));
+    fireEvent.change(screen.getByLabelText("Search conversations"), { target: { value: "project" } });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Reorder Clients group" })).toBeNull());
+  });
+
+  it("keeps hidden projects, child chats, and pins out of the sidebar and restores them in their group", () => {
+    localStorage.setItem(HIDDEN_PROJECTS_STORAGE_KEY, '["client"]');
+    const client: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: false, groupId: "clients" } };
+    const clone: WorkspaceInfo = { ...client, id: "clone", name: "Client Clone", settings: { ...client.settings, cloneSourceWorkspaceId: "client" } };
+    const tree: WorkspaceInfo = { ...client, id: "tree", name: "Client Worktree", kind: "worktree", parentId: "clone" };
+    const internal: WorkspaceInfo = { ...client, id: "internal", name: "Internal Beta", settings: { sidebarCollapsed: false, groupId: "internal" } };
+    const onDeleteWorkspace = vi.fn();
+    const p = { ...baseProps, workspaces: [client, clone, tree, internal], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [client, clone] }, { id: "internal", name: "Internal", workspaces: [internal] }], hasWorkspaceGroups: true,
+      threadsByWorkspace: { client: [{ id: "hidden-pin", name: "Hidden pinned chat", updatedAt: Date.now() }], tree: [{ id: "running-child", name: "Hidden worktree chat", updatedAt: Date.now() }], internal: [{ id: "visible-chat", name: "Visible internal chat", updatedAt: Date.now() }] },
+      threadStatusById: { "running-child": { isProcessing: true } },
+      isThreadPinned: (_workspaceId: string, id: string) => id === "hidden-pin",
+      getPinTimestamp: (_workspaceId: string, id: string) => id === "hidden-pin" ? 1 : null,
+      onDeleteWorkspace,
+    };
+    const view = render(<Sidebar {...p} />);
+    expect(screen.queryByRole("button", { name: "Open thread: Hidden worktree chat (Client Alpha)" })).toBeNull();
+    expect(screen.queryByText("Hidden pinned chat")).toBeNull();
+    expect(screen.queryByText("Hidden worktree chat")).toBeNull();
+    expect(view.container.querySelectorAll(".workspace-row .workspace-name")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Hidden projects (1)" }));
+    expect(screen.getByRole("region", { name: "Hidden projects" }).textContent).toContain("Clients");
+    expect(screen.getByText("1 agent running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Show project: Client Alpha" }));
+    expect(screen.getByRole("button", { name: "Hidden projects (0)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open thread: Hidden worktree chat (Client Alpha)" })).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Active Threads" })).getByText("Hidden pinned chat")).toBeTruthy();
+    expect(view.container.querySelector('[data-group-kind="clients"]')?.textContent).toContain("Client Alpha");
+    expect(onDeleteWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("does not resurrect hidden projects during search, refresh, or thread-list mode", async () => {
+    localStorage.setItem(HIDDEN_PROJECTS_STORAGE_KEY, '["hidden"]');
+    const projects = ["hidden", "visible"].map((id) => ({ id, name: `${id} project`, path: `/tmp/${id}`, connected: true, settings: { sidebarCollapsed: false } }));
+    const p = { ...baseProps, workspaces: projects, groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: projects }], threadsByWorkspace: { hidden: [{ id: "secret-chat", name: "Hidden chat", updatedAt: Date.now() }], visible: [{ id: "public-chat", name: "Visible chat", updatedAt: Date.now() }] } };
+    const view = render(<Sidebar {...p} threadListOrganizeMode="threads_only" />);
+    expect(screen.queryByText("Hidden chat")).toBeNull();
+    expect(within(screen.getByRole("region", { name: "Active Threads" })).getByText("Visible chat")).toBeTruthy();
+    view.rerender(<Sidebar {...p} threadListOrganizeMode="threads_only" threadListCursorByWorkspace={{ hidden: "more-pages" }} threadStatusById={{ "secret-chat": { isProcessing: true } }} />);
+    expect(screen.queryByText("Hidden chat")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle search" }));
+    fireEvent.change(screen.getByLabelText("Search conversations"), { target: { value: "hidden" } });
+    await waitFor(() => expect(screen.getByText("No titles or project names match your search.")).toBeTruthy());
+    expect(screen.queryByText("Hidden chat")).toBeNull();
+  });
+
+  it("opens all counted hidden projects with a separate search and resets it on reentry", async () => {
+    localStorage.setItem(HIDDEN_PROJECTS_STORAGE_KEY, '["alpha","beta"]');
+    const projects = ["alpha", "beta", "visible"].map((id) => ({
+      id, name: `${id} project`, path: `/tmp/${id}`, connected: true,
+      settings: { sidebarCollapsed: false, groupId: "clients" },
+    }));
+    render(<Sidebar {...baseProps} workspaces={projects}
+      groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: projects }]}
+      threadsByWorkspace={{ visible: [{ id: "public-chat", name: "Public conversation", updatedAt: Date.now() }] }} />);
+    fireEvent.click(screen.getByRole("button", { name: "Toggle search" }));
+    fireEvent.change(screen.getByLabelText("Search conversations"), { target: { value: "Public conversation" } });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Active Threads" })).toBeNull());
+
+    fireEvent.click(screen.getByRole("button", { name: "Hidden projects (2)" }));
+    expect(screen.getAllByRole("button", { name: /^Show project:/ })).toHaveLength(2);
+    const hiddenSearch = screen.getByLabelText("Search hidden projects") as HTMLInputElement;
+    expect(hiddenSearch.value).toBe("");
+    fireEvent.change(hiddenSearch, { target: { value: "alpha" } });
+    expect(screen.getByRole("button", { name: "Show project: alpha project" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show project: beta project" })).toBeNull();
+    fireEvent.change(hiddenSearch, { target: { value: "missing" } });
+    expect(screen.getByText("No hidden projects match your search.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to projects" }));
+    expect((screen.getByLabelText("Search conversations") as HTMLInputElement).value).toBe("Public conversation");
+    fireEvent.click(screen.getByRole("button", { name: "Hidden projects (2)" }));
+    expect(screen.getAllByRole("button", { name: /^Show project:/ })).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText("Search hidden projects"), { target: { value: "missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Toggle search" }));
+    expect(screen.getAllByRole("button", { name: /^Show project:/ })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Show project: alpha project" }));
+    expect(screen.getAllByRole("button", { name: /^Show project:/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Show project: beta project" }));
+    expect(screen.getByRole("button", { name: "Hidden projects (0)" })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem(HIDDEN_PROJECTS_STORAGE_KEY) || "[]")).toEqual([]);
+  });
+
+  it("keeps a restoration control when every project is hidden", () => {
+    localStorage.setItem(HIDDEN_PROJECTS_STORAGE_KEY, '["client"]');
+    const client = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: false } };
+    render(<Sidebar {...baseProps} workspaces={[client]} groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [client] }]} />);
+    expect(screen.getByText("All projects are hidden. Open Hidden projects to show them.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Hidden projects (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    expect(screen.getByRole("button", { name: "Hidden projects (0)" })).toBeTruthy();
+    expect(screen.getByText("Client Alpha")).toBeTruthy();
+  });
+
+  it("shows the running worktree thread with its project label and opens the correct checkout", () => {
+    const root = { id: "project", name: "Client project", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const tree = { ...root, id: "tree", name: "Worktree", kind: "worktree" as const, parentId: "project" };
+    const p = { ...baseProps, workspaces: [root, tree], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [root] }], hasWorkspaceGroups: true, threadsByWorkspace: { tree: [{ id: "task", name: "Task", updatedAt: 1 }] } };
+    const view = render(<Sidebar {...p} threadStatusById={{ task: { isProcessing: true } }} />);
+    const active = screen.getByRole("region", { name: "Active Threads" });
+    expect(active.textContent).toContain("Task");
+    expect(active.querySelector(".active-thread-meta")?.textContent).toBe("Client project · Running");
+    expect(active.textContent).toContain("Running");
+    expect(view.container.querySelectorAll(".workspace-group .workspace-name")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open thread: Task (Client project)" }));
+    expect(baseProps.onSelectThread).toHaveBeenCalledWith("tree", "task");
+    view.rerender(<Sidebar {...p} threadStatusById={{}} />);
+    expect(active.textContent).not.toContain("Client project");
+    expect(view.container.querySelector(".workspace-group .workspace-name")?.textContent).toBe("Client project");
+  });
+
+  it("marks finished unread active threads and clears the indicator after they are viewed", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const props = { ...baseProps, workspaces: [project], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
+      threadsByWorkspace: { client: [{ id: "task", name: "Finished task", updatedAt: Date.now() }] },
+    };
+    const view = render(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isProcessing: true } }} />);
+    const active = screen.getByRole("region", { name: "Active Threads" });
+    expect(active.textContent).not.toContain("Finished · unread");
+    view.rerender(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isProcessing: false } }} />);
+    expect(within(active).getByText("Finished · unread")).toBeTruthy();
+    expect(active.querySelector(".active-thread-dot.is-unread")).toBeTruthy();
+    const link = within(active).getByRole("button", { name: "Open thread: Finished task (Client Alpha)" });
+    expect(link.getAttribute("aria-describedby")).toBe("active-thread-unread-task");
+    fireEvent.click(link);
+    expect(baseProps.onSelectThread).toHaveBeenCalledWith("client", "task");
+    view.rerender(<Sidebar {...props} activeWorkspaceId="client" activeThreadId="task" threadStatusById={{ task: { hasUnread: false } }} />);
+    expect(active.textContent).not.toContain("Finished · unread");
+    expect(active.querySelector(".active-thread-dot.is-unread")).toBeNull();
+    view.rerender(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isReviewing: true } }} />);
+    expect(active.textContent).toContain("Reviewing");
+    expect(active.textContent).not.toContain("Finished · unread");
+  });
+
+  it("keeps Active Threads available in thread-list mode and collapses the area independently", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const props = { ...baseProps, workspaces: [project], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
+      threadsByWorkspace: { client: [{ id: "task", name: "Active task", updatedAt: Date.now() }] },
+    };
+    const view = render(<Sidebar {...props} threadListOrganizeMode="threads_only" activeWorkspaceId="client" activeThreadId="task" />);
+    const active = screen.getByRole("region", { name: "Active Threads" });
+    expect(within(active).getByRole("button", { name: "Open thread: Active task (Client Alpha)" }).getAttribute("aria-current")).toBe("page");
+    const heading = within(active).getByRole("button", { name: "Active Threads (1)" });
+    fireEvent.click(heading);
+    expect(heading.getAttribute("aria-expanded")).toBe("false");
+    expect(within(active).queryByText("Active task")).toBeNull();
+    view.unmount();
+    render(<Sidebar {...props} threadListOrganizeMode="by_project_activity" />);
+    const remounted = screen.getByRole("region", { name: "Active Threads" });
+    expect(within(remounted).queryByText("Active task")).toBeNull();
+    fireEvent.click(within(remounted).getByRole("button", { name: "Active Threads (1)" }));
+    expect(within(remounted).getByText("Active task")).toBeTruthy();
+  });
+
+  it("keeps hidden chats out of Active Threads even when a stale summary says they are running", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    render(<Sidebar {...baseProps} workspaces={[project]} groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [project] }]}
+      threadsByWorkspace={{ client: [{ id: "archived", name: "Archived task", updatedAt: Date.now() }] }}
+      threadStatusById={{ archived: { isProcessing: true } }} isThreadHidden={(_, threadId) => threadId === "archived"} />);
+    expect(within(screen.getByRole("region", { name: "Active Threads" })).queryByText("Archived task")).toBeNull();
+  });
+
+  it("sorts projects within a group and remembers the selected order after remounting", () => {
+    const projects = ["Zulu", "Alpha"].map((name) => ({ id: name, name, path: `/tmp/${name}`, connected: true, settings: { sidebarCollapsed: false } }));
+    const p = { ...baseProps, workspaces: projects, groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: projects }], hasWorkspaceGroups: true };
+    const view = render(<Sidebar {...p} />);
+    const names = () => Array.from(view.container.querySelectorAll(".workspace-group .workspace-name")).map((node) => node.textContent);
+    expect(names()).toEqual(["Alpha", "Zulu"]);
+    fireEvent.click(screen.getByRole("button", { name: "Organize and sort threads" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Name Z–A" }));
+    expect(names()).toEqual(["Zulu", "Alpha"]);
+    view.unmount();
+    const second = render(<Sidebar {...p} />);
+    expect(Array.from(second.container.querySelectorAll(".workspace-group .workspace-name")).map((node) => node.textContent)).toEqual(["Zulu", "Alpha"]);
+  });
+
+  it("dismisses only the active thread while keeping its project and running chat in the normal group", () => {
+    const root: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: false } };
+    const tree: WorkspaceInfo = { ...root, id: "tree", name: "Client tree", kind: "worktree", parentId: root.id };
+    const updatedAt = Date.now();
+    const onDeleteWorkspace = vi.fn();
+    const onSelectWorkspace = vi.fn();
+    const props = { ...baseProps, workspaces: [root, tree], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [root] }],
+      threadsByWorkspace: { tree: [{ id: "task", name: "Running task", updatedAt }] },
+      threadStatusById: { task: { isProcessing: true } }, onDeleteWorkspace, onSelectWorkspace,
+    };
+    const first = render(<Sidebar {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remove from Active Threads: Running task (Client Alpha)" }));
+    expect(screen.queryByRole("button", { name: "Open thread: Running task (Client Alpha)" })).toBeNull();
+    expect(first.container.querySelector(".workspace-group")?.textContent).toContain("Client Alpha");
+    expect(screen.getByText("Running task")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Hidden projects (0)" })).toBeTruthy();
+    expect(onDeleteWorkspace).not.toHaveBeenCalled();
+    expect(onSelectWorkspace).not.toHaveBeenCalled();
+    first.unmount();
+    const second = render(<Sidebar {...props} />);
+    expect(screen.queryByRole("button", { name: "Open thread: Running task (Client Alpha)" })).toBeNull();
+    second.rerender(<Sidebar {...props} threadsByWorkspace={{ tree: [{ id: "task", name: "Running task", updatedAt: updatedAt + 1 }] }} />);
+    expect(screen.getByRole("button", { name: "Open thread: Running task (Client Alpha)" })).toBeTruthy();
+  });
+
   it("toggles the search bar from the header icon", () => {
     render(<Sidebar {...baseProps} />);
 

@@ -7,6 +7,7 @@ All docs must be canonical, with no past commentary, only live state.
 This file is the agent contract for how to work in this repo.
 Detailed navigation/runbooks live in:
 
+- `docs/mrn-local-project.md` (MRN local setup, implemented features, open limits, and parallel-chat coordination)
 - `docs/codebase-map.md` (task-oriented file map: "if you need X, edit Y")
 - `docs/multi-agent-sync-runbook.md` (upstream `../Codex` sync checklist for multi-agent/config behavior)
 - `README.md` (setup, build, release, and broader project docs)

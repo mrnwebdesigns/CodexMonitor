@@ -1,5 +1,32 @@
+export type ProjectType = "" | "wordpress" | "mac-app" | "web-app" | "other";
+
+export type ProjectFinding = { value: string; detail: string };
+export type ProjectDiscovery = {
+  checkedAt: number;
+  website: string;
+  projectType: ProjectFinding;
+  hosting: ProjectFinding;
+  ssh: ProjectFinding;
+  localHub: ProjectFinding;
+  mainwp: ProjectFinding;
+};
+
+export type ProjectInfo = {
+  client: string;
+  summary: string;
+  website: string;
+  notes: string;
+  projectType?: ProjectType;
+  hosting?: string;
+  ssh?: string;
+  localHub?: string;
+  mainwp?: string;
+  discovery?: ProjectDiscovery | null;
+};
+
 export type WorkspaceSettings = {
   sidebarCollapsed: boolean;
+  projectInfo?: ProjectInfo | null;
   sortOrder?: number | null;
   groupId?: string | null;
   cloneSourceWorkspaceId?: string | null;
@@ -568,6 +595,28 @@ export type LocalUsageSnapshot = {
   days: LocalUsageDay[];
   totals: LocalUsageTotals;
   topModels: LocalUsageModel[];
+};
+
+export type ProjectTimeDay = {
+  day: string;
+  agentTimeMs: number;
+  estimatedTimeMs: number;
+};
+
+export type ProjectTimeThread = {
+  threadId: string;
+  workspaceId: string;
+  title: string | null;
+  days: ProjectTimeDay[];
+};
+
+export type ProjectTimeSnapshot = {
+  updatedAt: number;
+  rangeStart: string;
+  rangeEnd: string;
+  timeZone: string;
+  threads: ProjectTimeThread[];
+  warnings: string[];
 };
 
 export type TurnPlanStepStatus = "pending" | "inProgress" | "completed";

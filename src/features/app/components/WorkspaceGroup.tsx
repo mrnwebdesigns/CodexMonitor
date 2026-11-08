@@ -1,23 +1,40 @@
+import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business";
+import Building2 from "lucide-react/dist/esm/icons/building-2";
+import Folder from "lucide-react/dist/esm/icons/folder";
+import GripVertical from "lucide-react/dist/esm/icons/grip-vertical";
+import type { WorkspaceGroupSortProps } from "@app/hooks/useWorkspaceGroupSort";
+
 type WorkspaceGroupProps = {
   toggleId: string | null;
   name: string;
+  count?: number;
   showHeader: boolean;
   isCollapsed: boolean;
   onToggleCollapse: (groupId: string) => void;
+  sortProps?: WorkspaceGroupSortProps;
   children: React.ReactNode;
 };
 
 export function WorkspaceGroup({
   toggleId,
   name,
+  count,
   showHeader,
   isCollapsed,
   onToggleCollapse,
+  sortProps,
   children,
 }: WorkspaceGroupProps) {
   const isToggleable = Boolean(toggleId);
+  const tone = name.toLowerCase() === "clients" ? "clients" : name.toLowerCase() === "internal" ? "internal" : "default";
+  const Icon = tone === "clients" ? BriefcaseBusiness : tone === "internal" ? Building2 : Folder;
   return (
-    <div className="workspace-group">
+    <div
+      ref={sortProps?.ref}
+      className={`workspace-group${sortProps?.isDragging ? " is-dragging" : ""}`}
+      data-group-kind={tone}
+      data-drop-position={sortProps?.dropPosition}
+    >
       {showHeader && (
         <div
           className={`workspace-group-header${isToggleable ? " is-toggleable" : ""}`}
@@ -43,7 +60,17 @@ export function WorkspaceGroup({
           aria-expanded={isToggleable ? !isCollapsed : undefined}
           tabIndex={isToggleable ? 0 : undefined}
         >
-          <div className="workspace-group-label">{name}</div>
+          {sortProps && (
+            <button
+              type="button"
+              className="workspace-group-drag-handle"
+              {...sortProps.handleProps}
+            >
+              <GripVertical aria-hidden />
+            </button>
+          )}
+          <div className="workspace-group-label"><Icon aria-hidden />{name}</div>
+          {count !== undefined && <span className="workspace-group-count">{count}</span>}
           {isToggleable && (
             <button
               className={`group-toggle ${isCollapsed ? "" : "expanded"}`}
@@ -63,7 +90,7 @@ export function WorkspaceGroup({
           )}
         </div>
       )}
-      <div className={`workspace-group-list ${isCollapsed ? "collapsed" : ""}`}>
+      <div className={`workspace-group-list ${isCollapsed ? "collapsed" : ""}`} aria-hidden={isCollapsed} inert={isCollapsed ? true : undefined}>
         <div className="workspace-group-content">{children}</div>
       </div>
     </div>

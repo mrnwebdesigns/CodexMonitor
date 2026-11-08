@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import {
+  type GitInitSelection,
   applyWorktreeChanges as applyWorktreeChangesService,
   createGitHubRepo as createGitHubRepoService,
   initGitRepo as initGitRepoService,
@@ -17,6 +18,7 @@ type UseGitActionsOptions = {
   onRefreshGitStatus: () => void;
   onRefreshGitDiffs: () => void;
   onClearGitRootCandidates?: () => void;
+  onGitRootInitialized?: (workspaceId: string, root: string) => Promise<unknown>;
   onError?: (error: unknown) => void;
 };
 
@@ -27,6 +29,7 @@ export function useGitActions({
   onRefreshGitStatus,
   onRefreshGitDiffs,
   onClearGitRootCandidates,
+  onGitRootInitialized,
   onError,
 }: UseGitActionsOptions) {
   const [worktreeApplyError, setWorktreeApplyError] = useState<string | null>(null);
@@ -190,76 +193,27 @@ export function useGitActions({
     }
   }, [isWorktree, workspaceId]);
 
-  const initGitRepo = useCallback(async (branch: string): Promise<InitGitRepoOutcome> => {
-    if (!workspaceId) {
-      return "failed";
-    }
+  const initGitRepo = useCallback(async (branch: string, setup?: GitInitSelection): Promise<InitGitRepoOutcome> => {
+    if (!workspaceId || !setup) return "failed";
     const actionWorkspaceId = workspaceId;
     setInitGitRepoLoading(true);
-    let shouldRefresh = false;
-    let outcome: InitGitRepoOutcome = "failed";
-    let commitError: string | null = null;
     try {
-      const response = await initGitRepoService(actionWorkspaceId, branch, false);
-      if (workspaceIdRef.current !== actionWorkspaceId) {
-        return "cancelled";
+      const response = await initGitRepoService(actionWorkspaceId, branch, false, setup);
+      if (workspaceIdRef.current !== actionWorkspaceId) return "cancelled";
+      if (response.status !== "initialized" || response.commitError) {
+        throw new Error(response.status === "initialized" ? response.commitError : "Refresh the Git setup review before continuing.");
       }
-
-      if (response.status === "needs_confirmation") {
-        const entryCount = response.entryCount ?? 0;
-        const plural = entryCount === 1 ? "" : "s";
-        const confirmed = await ask(
-          `Initialize Git in this folder?\n\nThis will create a .git directory, set the initial branch to "${branch}", and create an initial commit.\n\nThis folder contains ${entryCount} existing item${plural}.`,
-          {
-            title: "Initialize Git",
-            kind: "warning",
-            okLabel: "Initialize",
-            cancelLabel: "Cancel",
-          },
-        );
-        if (!confirmed) {
-          return "cancelled";
-        }
-
-        if (workspaceIdRef.current !== actionWorkspaceId) {
-          return "cancelled";
-        }
-
-        const forced = await initGitRepoService(actionWorkspaceId, branch, true);
-        shouldRefresh = forced.status === "initialized" || forced.status === "already_initialized";
-        if (forced.status === "initialized") {
-          commitError = forced.commitError ?? null;
-        }
-        outcome = shouldRefresh ? "initialized" : "failed";
-      } else {
-        shouldRefresh = response.status === "initialized" || response.status === "already_initialized";
-        if (response.status === "initialized") {
-          commitError = response.commitError ?? null;
-        }
-        outcome = shouldRefresh ? "initialized" : "failed";
-      }
-
-      if (commitError) {
-        onError?.(
-          new Error(
-            `Git was initialized, but the initial commit failed.\n\n${commitError}\n\nYou may need to set git user.name and user.email, then commit manually.`,
-          ),
-        );
-      }
+      await onGitRootInitialized?.(actionWorkspaceId, response.relativeRoot ?? setup.root);
+      onClearGitRootCandidates?.();
+      refreshGitData();
+      return "initialized";
     } catch (error) {
       onError?.(error);
-      outcome = "failed";
+      return "failed";
     } finally {
-      if (workspaceIdRef.current === actionWorkspaceId) {
-        setInitGitRepoLoading(false);
-        if (shouldRefresh) {
-          onClearGitRootCandidates?.();
-          refreshGitData();
-        }
-      }
+      if (workspaceIdRef.current === actionWorkspaceId) setInitGitRepoLoading(false);
     }
-    return outcome;
-  }, [onClearGitRootCandidates, onError, refreshGitData, workspaceId]);
+  }, [onClearGitRootCandidates, onError, onGitRootInitialized, refreshGitData, workspaceId]);
 
   const createGitHubRepo = useCallback(
     async (

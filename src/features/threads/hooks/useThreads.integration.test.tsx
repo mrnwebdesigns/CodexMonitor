@@ -19,6 +19,7 @@ import {
 import { STORAGE_KEY_DETACHED_REVIEW_LINKS } from "@threads/utils/threadStorage";
 import { useQueuedSend } from "./useQueuedSend";
 import { useThreads } from "./useThreads";
+import { UNREAD_THREADS_STORAGE_KEY } from "./useThreadReadState";
 
 type AppServerHandlers = Parameters<typeof useAppServerEvents>[0];
 
@@ -70,6 +71,36 @@ describe("useThreads UX integration", () => {
 
   afterEach(() => {
     nowSpy.mockRestore();
+  });
+
+  it("tracks unseen completions through restart, viewing, and continuing a thread", async () => {
+    const options = { activeWorkspace: workspace, onWorkspaceConnected: vi.fn() };
+    const first = renderHook(() => useThreads(options));
+    act(() => {
+      handlers?.onTurnStarted?.("ws-other", "finished", "turn-1");
+      handlers?.onAgentMessageCompleted?.({ workspaceId: "ws-other", threadId: "finished", itemId: "answer", text: "Done" });
+    });
+    expect(first.result.current.threadStatusById.finished.isProcessing).toBe(true);
+    act(() => handlers?.onTurnCompleted?.("ws-other", "finished", "turn-1"));
+    expect(first.result.current.threadStatusById.finished).toMatchObject({ isProcessing: false, hasUnread: true });
+    first.unmount();
+
+    const second = renderHook(() => useThreads(options));
+    expect(second.result.current.threadStatusById.finished.hasUnread).toBe(true);
+    // Sending directly to a background thread acknowledges its previous result.
+    vi.mocked(sendUserMessageService).mockResolvedValue({ result: { turn: { id: "turn-2" } } });
+    await act(async () => {
+      await second.result.current.sendUserMessageToThread({ ...workspace, id: "ws-other" }, "finished", "Continue");
+    });
+    expect(second.result.current.threadStatusById.finished.hasUnread).toBe(false);
+    act(() => {
+      handlers?.onAgentMessageCompleted?.({ workspaceId: "ws-other", threadId: "finished", itemId: "answer-2", text: "Done again" });
+      handlers?.onTurnCompleted?.("ws-other", "finished", "turn-2");
+    });
+    expect(second.result.current.threadStatusById.finished.hasUnread).toBe(true);
+    act(() => second.result.current.setActiveThreadId("finished", "ws-other"));
+    expect(second.result.current.threadStatusById.finished.hasUnread).toBe(false);
+    expect(JSON.parse(localStorage.getItem(UNREAD_THREADS_STORAGE_KEY)!)).toEqual([]);
   });
 
   it("resumes selected threads when no local items exist", async () => {

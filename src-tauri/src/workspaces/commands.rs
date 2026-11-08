@@ -43,6 +43,22 @@ fn workspace_remote_empty_params() -> serde_json::Value {
 }
 
 #[tauri::command]
+pub(crate) async fn discover_project(
+    workspace_id: String,
+    website: String,
+    project_type: String,
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<crate::types::ProjectDiscovery, String> {
+    if remote_backend::is_remote_mode(&*state).await {
+        let request = workspace_rpc::DiscoverProjectRequest { workspace_id, website, project_type };
+        let response = remote_backend::call_remote(&*state, app, "discover_project", workspace_remote_params(&request)?).await?;
+        return serde_json::from_value(response).map_err(|err| err.to_string());
+    }
+    workspaces_core::discover_project_core(&state.workspaces, &workspace_id, website, project_type).await
+}
+
+#[tauri::command]
 pub(crate) async fn read_workspace_file(
     workspace_id: String,
     path: String,

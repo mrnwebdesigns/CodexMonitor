@@ -1,5 +1,17 @@
 # CodexMonitor
 
+## MRN source repository
+
+The MRN version is maintained privately at [mrnwebdesigns/codex-monitor-mrn](https://github.com/mrnwebdesigns/codex-monitor-mrn), with the original upstream history and MIT license preserved.
+
+- `main`: saved MRN source baseline.
+- `codex/mrn-local-evaluation`: current MRN application development.
+- `codex/chromium-preview`: isolated Browser Lab development; Chromium integration is pending.
+
+See [the MRN project guide](docs/mrn-local-project.md) for the working app and [Browser Lab's guide](https://github.com/mrnwebdesigns/codex-monitor-mrn/blob/codex/chromium-preview/docs/browser-lab.md) for the experimental version. Runtime profiles, credentials, chat history, settings, local reports, and build outputs are excluded from Git. GitHub Actions are disabled in the private repository; pushing source does not build, install, or release an app.
+
+The upstream project documentation follows.
+
 [![gitcgr](https://gitcgr.com/badge/Dimillian/CodexMonitor.svg)](https://gitcgr.com/Dimillian/CodexMonitor)
 
 ![CodexMonitor](screenshot.png)

@@ -7,14 +7,18 @@ use tauri::RunEvent;
 use tauri::WindowEvent;
 
 mod backend;
+#[cfg(desktop)]
+mod browser;
 mod codex;
 mod daemon_binary;
 mod dictation;
 mod event_sink;
 mod files;
 mod git;
+mod image_drop;
 mod git_utils;
 mod local_usage;
+mod message_search;
 #[cfg(desktop)]
 mod menu;
 #[cfg(not(desktop))]
@@ -114,8 +118,31 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(desktop)]
+            app.manage(browser::BrowserState::default());
             let state = state::AppState::load(&app.handle());
             app.manage(state);
+            #[cfg(desktop)]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    shared::message_search_core::start_default_worker().await;
+                    let sink = event_sink::TauriEventSink::new(app_handle.clone());
+                    loop {
+                        match shared::history_sync_core::sync_once(None).await {
+                            Ok(Some(report)) => {
+                                let state = app_handle.state::<state::AppState>();
+                                shared::history_sync_core::emit_changes(
+                                    &report, &*state.workspaces.lock().await, &sink,
+                                );
+                            }
+                            Ok(None) => {}
+                            Err(error) => eprintln!("Automatic history import paused: {error}"),
+                        }
+                        tokio::time::sleep(shared::history_sync_core::INTERVAL).await;
+                    }
+                });
+            }
             #[cfg(target_os = "macos")]
             {
                 let tray_state = app.state::<tray::TrayState>();
@@ -180,12 +207,19 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
+            #[cfg(desktop)] browser::browser_navigate,
+            #[cfg(desktop)] browser::browser_get_url,
+            #[cfg(desktop)] browser::browser_set_bounds,
+            #[cfg(desktop)] browser::browser_set_visible,
+            #[cfg(desktop)] browser::browser_action,
+            #[cfg(desktop)] browser::browser_capture,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,
             files::file_read,
             files::file_write,
             files::read_image_as_data_url,
+            image_drop::resolve_dropped_directories,
             files::write_text_file,
             codex::get_config_model,
             menu::menu_set_accelerators,
@@ -231,6 +265,7 @@ pub fn run() {
             codex::collaboration_mode_list,
             workspaces::connect_workspace,
             git::get_git_status,
+            git::preview_git_init,
             git::init_git_repo,
             git::create_github_repo,
             git::list_git_roots,
@@ -255,6 +290,7 @@ pub fn run() {
             git::checkout_github_pull_request,
             workspaces::list_workspace_files,
             workspaces::read_workspace_file,
+            workspaces::discover_project,
             workspaces::open_workspace_in,
             workspaces::get_open_app_icon,
             git::list_git_branches,
@@ -296,6 +332,10 @@ pub fn run() {
             dictation::dictation_stop,
             dictation::dictation_cancel,
             local_usage::local_usage_snapshot,
+            local_usage::project_time_snapshot,
+            message_search::search_messages,
+            message_search::message_search_status,
+            message_search::message_search_control,
             notifications::is_macos_debug_build,
             notifications::app_build_type,
             notifications::send_notification_fallback,
@@ -328,8 +368,10 @@ pub fn run() {
 
         #[cfg(target_os = "macos")]
         if let RunEvent::Reopen { .. } = event {
-            if let Some(window) = app_handle.get_webview_window("main") {
+            // The desktop window can contain both the app UI and browser webviews.
+            if let Some(window) = app_handle.get_window("main") {
                 let _ = window.show();
+                let _ = window.unminimize();
                 let _ = window.set_focus();
             }
         }

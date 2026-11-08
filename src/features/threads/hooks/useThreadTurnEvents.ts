@@ -25,6 +25,7 @@ import type { ThreadAction } from "./useThreadsReducer";
 
 type UseThreadTurnEventsOptions = {
   dispatch: Dispatch<ThreadAction>;
+  onThreadCompleted?: (workspaceId: string, threadId: string) => void;
   planByThreadRef: MutableRefObject<Record<string, TurnPlan | null>>;
   getCurrentRateLimits?: (workspaceId: string) => RateLimitSnapshot | null;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
@@ -42,6 +43,7 @@ type UseThreadTurnEventsOptions = {
 
 export function useThreadTurnEvents({
   dispatch,
+  onThreadCompleted,
   planByThreadRef,
   getCurrentRateLimits,
   getCustomName,
@@ -261,12 +263,13 @@ export function useThreadTurnEvents({
   );
 
   const onTurnCompleted = useCallback(
-    (_workspaceId: string, threadId: string, turnId: string) => {
+    (workspaceId: string, threadId: string, turnId: string) => {
       const activeTurnId = getLatestKnownActiveTurnId(threadId);
       if (turnId && activeTurnId && turnId !== activeTurnId) {
         return;
       }
       markProcessing(threadId, false);
+      onThreadCompleted?.(workspaceId, threadId);
       resetThreadTurnState(
         {
           hasOptimisticActiveTurnByThreadRef,
@@ -284,6 +287,7 @@ export function useThreadTurnEvents({
       dispatch,
       getLatestKnownActiveTurnId,
       markProcessing,
+      onThreadCompleted,
       pendingInterruptsRef,
       setActiveTurnId,
       shouldClearCompletedPlan,

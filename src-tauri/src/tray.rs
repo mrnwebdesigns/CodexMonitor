@@ -474,7 +474,7 @@ fn handle_tray_menu_event<R: Runtime>(app: &tauri::AppHandle<R>, event: MenuEven
 
 #[cfg(target_os = "macos")]
 fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -483,7 +483,7 @@ fn show_main_window<R: Runtime>(app: &tauri::AppHandle<R>) {
 
 #[cfg(target_os = "macos")]
 fn emit_open_thread_event<R: Runtime>(app: &tauri::AppHandle<R>, payload: TrayOpenThreadPayload) {
-    if let Some(window) = app.get_webview_window("main") {
+    if let Some(window) = app.get_window("main") {
         let _ = window.emit(TRAY_OPEN_THREAD_EVENT, payload);
     } else {
         let _ = app.emit(TRAY_OPEN_THREAD_EVENT, payload);

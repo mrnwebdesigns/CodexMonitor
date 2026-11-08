@@ -46,6 +46,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
   const pushThreadErrorMessage = vi.fn();
   const safeMessageActivity = vi.fn();
   const recordThreadActivity = vi.fn();
+  const onThreadCompleted = vi.fn();
   const pendingInterruptsRef = {
     current: new Set(overrides.pendingInterrupts ?? []),
   };
@@ -56,6 +57,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
   const { result } = renderHook(() =>
     useThreadTurnEvents({
       dispatch,
+      onThreadCompleted,
       planByThreadRef,
       getCurrentRateLimits,
       getCustomName,
@@ -86,6 +88,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
     pushThreadErrorMessage,
     safeMessageActivity,
     recordThreadActivity,
+    onThreadCompleted,
     pendingInterruptsRef,
     planByThreadRef,
   };
@@ -439,7 +442,7 @@ describe("useThreadTurnEvents", () => {
   });
 
   it("clears pending interrupt and active turn on turn completed", () => {
-    const { result, markProcessing, setActiveTurnId, pendingInterruptsRef } =
+    const { result, markProcessing, setActiveTurnId, pendingInterruptsRef, onThreadCompleted } =
       makeOptions({ pendingInterrupts: ["thread-1"] });
 
     act(() => {
@@ -447,12 +450,13 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(markProcessing).toHaveBeenCalledWith("thread-1", false);
+    expect(onThreadCompleted).toHaveBeenCalledWith("ws-1", "thread-1");
     expect(setActiveTurnId).toHaveBeenCalledWith("thread-1", null);
     expect(pendingInterruptsRef.current.has("thread-1")).toBe(false);
   });
 
   it("ignores turn completed events for stale turns", () => {
-    const { result, markProcessing, setActiveTurnId } = makeOptions({
+    const { result, markProcessing, setActiveTurnId, onThreadCompleted } = makeOptions({
       activeTurnByThread: {
         "thread-1": "turn-active",
       },
@@ -463,6 +467,7 @@ describe("useThreadTurnEvents", () => {
     });
 
     expect(markProcessing).not.toHaveBeenCalled();
+    expect(onThreadCompleted).not.toHaveBeenCalled();
     expect(setActiveTurnId).not.toHaveBeenCalled();
   });
 

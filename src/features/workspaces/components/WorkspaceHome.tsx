@@ -15,6 +15,8 @@ import type {
   ModelOption,
   SkillOption,
   WorkspaceInfo,
+  ProjectInfo,
+  ThreadSummary,
 } from "../../../types";
 import { ComposerInput } from "../../composer/components/ComposerInput";
 import { useComposerImages } from "../../composer/hooks/useComposerImages";
@@ -28,6 +30,8 @@ import type {
 import { computeDictationInsertion } from "../../../utils/dictation";
 import { isComposingEvent } from "../../../utils/keys";
 import { FileEditorCard } from "../../shared/components/FileEditorCard";
+import { ProjectInfoCard } from "./ProjectInfoCard";
+import { ProjectTimeCard } from "./ProjectTimeCard";
 import { WorkspaceHomeRunControls } from "./WorkspaceHomeRunControls";
 import { WorkspaceHomeHistory } from "./WorkspaceHomeHistory";
 import { WorkspaceHomeGitInitBanner } from "./WorkspaceHomeGitInitBanner";
@@ -37,6 +41,11 @@ import type { ThreadStatusById } from "../../../utils/threadStatus";
 
 type WorkspaceHomeProps = {
   workspace: WorkspaceInfo;
+  groupName?: string | null;
+  branch?: string | null;
+  onSaveProjectInfo?: (id: string, info: ProjectInfo) => Promise<unknown>;
+  onOpenWebsite?: (url: string) => void;
+  timeThreadsByWorkspace?: Record<string, ThreadSummary[]>;
   showGitInitBanner: boolean;
   initGitRepoLoading: boolean;
   onInitGitRepo: () => void | Promise<void>;
@@ -46,6 +55,7 @@ type WorkspaceHomeProps = {
   prompt: string;
   onPromptChange: (value: string) => void;
   onStartRun: (images?: string[]) => Promise<boolean>;
+  composerImages?: Pick<ReturnType<typeof useComposerImages>, "activeImages" | "attachImages" | "pickImages" | "removeImage" | "clearActiveImages">;
   runMode: WorkspaceRunMode;
   onRunModeChange: (mode: WorkspaceRunMode) => void;
   models: ModelOption[];
@@ -100,6 +110,11 @@ type WorkspaceHomeProps = {
 
 export function WorkspaceHome({
   workspace,
+  groupName,
+  branch,
+  onSaveProjectInfo,
+  onOpenWebsite,
+  timeThreadsByWorkspace,
   showGitInitBanner,
   initGitRepoLoading,
   onInitGitRepo,
@@ -109,6 +124,7 @@ export function WorkspaceHome({
   prompt,
   onPromptChange,
   onStartRun,
+  composerImages,
   runMode,
   onRunModeChange,
   models,
@@ -166,16 +182,11 @@ export function WorkspaceHome({
   const iconSrc = useMemo(() => convertFileSrc(iconPath), [iconPath]);
   const fallbackTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaRef = textareaRefProp ?? fallbackTextareaRef;
-  const {
-    activeImages,
-    attachImages,
-    pickImages,
-    removeImage,
-    clearActiveImages,
-  } = useComposerImages({
+  const fallbackImages = useComposerImages({
     activeThreadId: null,
     activeWorkspaceId: workspace.id,
   });
+  const { activeImages, attachImages, pickImages, removeImage, clearActiveImages } = composerImages ?? fallbackImages;
 
   const {
     isAutocompleteOpen,
@@ -359,10 +370,19 @@ export function WorkspaceHome({
           />
         )}
         <div>
-          <div className="workspace-home-title">{workspace.name}</div>
+          <div className="workspace-home-eyebrow">{groupName || "Project"} <span>/</span> Project home</div>
+          <h1 className="workspace-home-title">{workspace.name}</h1>
           <div className="workspace-home-path">{workspace.path}</div>
         </div>
       </div>
+
+      <div className="project-home-status">
+        <span className={workspace.connected ? "is-connected" : ""}><i aria-hidden />{workspace.connected ? "Codex connected" : "Codex offline"}</span>
+        {branch && <span>Branch <strong>{branch}</strong></span>}
+        <span>{recentThreadInstances.length} recent chat{recentThreadInstances.length === 1 ? "" : "s"}</span>
+      </div>
+      {onSaveProjectInfo && <ProjectInfoCard workspace={workspace} onSave={onSaveProjectInfo} onOpenWebsite={onOpenWebsite} />}
+      <ProjectTimeCard workspaceId={workspace.id} threadsByWorkspace={timeThreadsByWorkspace} onOpenThread={onSelectInstance} />
 
       {showGitInitBanner && (
         <WorkspaceHomeGitInitBanner
@@ -371,6 +391,7 @@ export function WorkspaceHome({
         />
       )}
 
+      <div className="workspace-home-section-header"><h2 className="workspace-home-section-title">Start a new chat</h2></div>
       <div className="workspace-home-composer">
         <div className="composer">
           <ComposerInput
@@ -437,6 +458,8 @@ export function WorkspaceHome({
         isSubmitting={isSubmitting}
       />
 
+      <details className="workspace-home-instructions">
+      <summary>Agent instructions <span>{agentMdExists ? "AGENTS.md" : "Add project guidance"}{agentMdDirty ? " · Unsaved changes" : ""}</span></summary>
       <div className="workspace-home-agent">
         {agentMdTruncated && (
           <div className="workspace-home-agent-warning">
@@ -470,6 +493,7 @@ export function WorkspaceHome({
         />
       </div>
 
+      </details>
       <WorkspaceHomeHistory
         runs={runs}
         recentThreadInstances={recentThreadInstances}

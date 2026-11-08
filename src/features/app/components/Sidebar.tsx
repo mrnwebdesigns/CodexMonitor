@@ -9,12 +9,20 @@ import type {
 } from "../../../types";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { MouseEvent, RefObject } from "react";
-import { FolderOpen } from "lucide-react";
+import { ArrowLeft, EyeOff, FolderOpen } from "lucide-react";
+import { useProjectVisibility } from "../hooks/useProjectVisibility";
+import { useProjectColors } from "@app/hooks/useProjectColors";
+import { HiddenProjects } from "./HiddenProjects";
+import { MessageSearchResults } from "@/features/search/components/MessageSearchResults";
+import { ActiveThreads } from "./ActiveThreads";
+import { useSidebarProjects } from "../hooks/useSidebarProjects";
+import { sortProjects } from "@/features/workspaces/domain/projectActivity";
 import { SidebarBottomRail } from "./SidebarBottomRail";
 import { SidebarHeader } from "./SidebarHeader";
 import { SidebarSearchBar } from "./SidebarSearchBar";
 import { SidebarThreadsOnlySection } from "./SidebarThreadsOnlySection";
 import { SidebarWorkspaceGroups } from "./SidebarWorkspaceGroups";
+import type { ReorderWorkspaceGroup } from "@/features/workspaces/domain/workspaceGroups";
 import { PinnedThreadList } from "./PinnedThreadList";
 import {
   countRootRows,
@@ -100,11 +108,13 @@ type SidebarProps = {
   workspaces: WorkspaceInfo[];
   groupedWorkspaces: WorkspaceGroupSection[];
   hasWorkspaceGroups: boolean;
+  onReorderWorkspaceGroup?: ReorderWorkspaceGroup;
   deletingWorktreeIds: Set<string>;
   newAgentDraftWorkspaceId?: string | null;
   startingDraftThreadWorkspaceId?: string | null;
   threadsByWorkspace: Record<string, ThreadSummary[]>;
   threadParentById: Record<string, string>;
+  isThreadHidden?: (workspaceId: string, threadId: string) => boolean;
   threadStatusById: ThreadStatusById;
   threadListLoadingByWorkspace: Record<string, boolean>;
   threadListPagingByWorkspace: Record<string, boolean>;
@@ -158,14 +168,16 @@ type SidebarProps = {
 };
 
 export const Sidebar = memo(function Sidebar({
-  workspaces,
-  groupedWorkspaces,
+  workspaces: allWorkspaces,
+  groupedWorkspaces: allGroupedWorkspaces,
   hasWorkspaceGroups,
+  onReorderWorkspaceGroup,
   deletingWorktreeIds,
   newAgentDraftWorkspaceId = null,
   startingDraftThreadWorkspaceId = null,
   threadsByWorkspace,
   threadParentById,
+  isThreadHidden,
   threadStatusById,
   threadListLoadingByWorkspace,
   threadListPagingByWorkspace,
@@ -217,10 +229,17 @@ export const Sidebar = memo(function Sidebar({
   onWorkspaceDragLeave,
   onWorkspaceDrop,
 }: SidebarProps) {
+  const { getProjectColor, setProjectColor, palette: projectColorPalette } = useProjectColors();
+  const { visibleWorkspaces: workspaces, visibleIds, hiddenProjects, hideProject, showProject, showAllProjects } = useProjectVisibility(allWorkspaces);
+  const groupedWorkspaces = useMemo(() => allGroupedWorkspaces.map((group) => ({
+    ...group, workspaces: group.workspaces.filter((workspace) => visibleIds.has(workspace.id)),
+  })).filter((group) => group.workspaces.length > 0), [allGroupedWorkspaces, visibleIds]);
+  const [showHiddenProjects, setShowHiddenProjects] = useState(false);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState(
     new Set<string>(),
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [hiddenSearchQuery, setHiddenSearchQuery] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] =
     useState<SidebarWorkspaceAddMenuAnchor | null>(null);
@@ -241,6 +260,12 @@ export const Sidebar = memo(function Sidebar({
     COLLAPSED_GROUPS_STORAGE_KEY,
   );
   const { getThreadRows } = useThreadRows(threadParentById);
+  const rootProjects = useMemo(() => workspaces.filter((workspace) =>
+    (workspace.kind ?? "main") === "main" && !workspace.parentId &&
+    !workspaces.some((source) => source.id === workspace.settings.cloneSourceWorkspaceId && source.id !== workspace.id),
+  ), [workspaces]);
+  const { projectSortKey, setProjectSortKey, activity: projectActivity, activeThreads, removeActiveThread } =
+    useSidebarProjects(allWorkspaces, rootProjects, threadsByWorkspace, threadStatusById, isThreadHidden);
   const { showThreadMenu, showWorkspaceMenu, showWorktreeMenu, showCloneMenu } =
     useSidebarMenus({
       onDeleteThread,
@@ -252,6 +277,15 @@ export const Sidebar = memo(function Sidebar({
       onReloadWorkspaceThreads,
       onDeleteWorkspace,
       onDeleteWorktree,
+      onRemoveActiveThread: removeActiveThread,
+      getProjectColor,
+      projectColorPalette,
+      onSetProjectColor: setProjectColor,
+      onHideWorkspace: (id) => {
+        hideProject(id);
+        setAddMenuAnchor(null);
+        setAllThreadsAddMenuAnchor(null);
+      },
     });
   const {
     sessionPercent,
@@ -509,96 +543,14 @@ export const Sidebar = memo(function Sidebar({
     [threadListSortKey],
   );
 
-  const workspaceActivityById = useMemo(() => {
-    const activityById = new Map<
-      string,
-      {
-        hasThreads: boolean;
-        timestamp: number;
-      }
-    >();
-    const workspaceById = new Map<string, WorkspaceInfo>();
-    workspaces.forEach((workspace) => {
-      workspaceById.set(workspace.id, workspace);
-    });
-
-    const cloneWorkspacesBySourceId = new Map<string, WorkspaceInfo[]>();
-    workspaces
-      .filter((entry) => (entry.kind ?? "main") === "main")
-      .forEach((entry) => {
-        const sourceId = entry.settings.cloneSourceWorkspaceId?.trim();
-        if (!sourceId || sourceId === entry.id || !workspaceById.has(sourceId)) {
-          return;
-        }
-        const list = cloneWorkspacesBySourceId.get(sourceId) ?? [];
-        list.push(entry);
-        cloneWorkspacesBySourceId.set(sourceId, list);
-      });
-
-    filteredGroupedWorkspaces.forEach((group) => {
-      group.workspaces.forEach((workspace) => {
-        const rootThreads = threadsByWorkspace[workspace.id] ?? [];
-        const visibleClones =
-          normalizedQuery && !isWorkspaceMatch(workspace)
-            ? (cloneWorkspacesBySourceId.get(workspace.id) ?? []).filter((clone) =>
-                workspaceVisibleDuringSearchById.get(clone.id),
-              )
-            : (cloneWorkspacesBySourceId.get(workspace.id) ?? []);
-        let hasThreads = rootThreads.length > 0;
-        let timestamp = getSortTimestamp(rootThreads[0]);
-
-        visibleClones.forEach((clone) => {
-          const cloneThreads = threadsByWorkspace[clone.id] ?? [];
-          if (!cloneThreads.length) {
-            return;
-          }
-          hasThreads = true;
-          timestamp = Math.max(timestamp, getSortTimestamp(cloneThreads[0]));
-        });
-
-        activityById.set(workspace.id, {
-          hasThreads,
-          timestamp,
-        });
-      });
-    });
-    return activityById;
-  }, [
-    filteredGroupedWorkspaces,
-    getSortTimestamp,
-    isWorkspaceMatch,
-    normalizedQuery,
-    threadsByWorkspace,
-    workspaceVisibleDuringSearchById,
-    workspaces,
-  ]);
-
-  const sortedGroupedWorkspaces = useMemo(() => {
-    if (threadListOrganizeMode !== "by_project_activity") {
-      return filteredGroupedWorkspaces;
-    }
-    return filteredGroupedWorkspaces.map((group) => ({
-      ...group,
-      workspaces: group.workspaces.slice().sort((a, b) => {
-        const aActivity = workspaceActivityById.get(a.id) ?? {
-          hasThreads: false,
-          timestamp: 0,
-        };
-        const bActivity = workspaceActivityById.get(b.id) ?? {
-          hasThreads: false,
-          timestamp: 0,
-        };
-        if (aActivity.hasThreads !== bActivity.hasThreads) {
-          return aActivity.hasThreads ? -1 : 1;
-        }
-        const timestampDiff = bActivity.timestamp - aActivity.timestamp;
-        if (timestampDiff !== 0) {
-          return timestampDiff;
-        }
-        return a.name.localeCompare(b.name);
-      }),
-    }));
-  }, [filteredGroupedWorkspaces, threadListOrganizeMode, workspaceActivityById]);
+  const sortedGroupedWorkspaces = useMemo(() => filteredGroupedWorkspaces.map((group) => ({
+    ...group,
+    workspaces: sortProjects(
+      group.workspaces,
+      threadListOrganizeMode === "by_project_activity" ? "activity" : projectSortKey,
+      projectActivity,
+    ),
+  })), [filteredGroupedWorkspaces, threadListOrganizeMode, projectSortKey, projectActivity]);
 
   const flatThreadRootGroups = useMemo(() => {
     if (threadListOrganizeMode !== "threads_only") {
@@ -686,6 +638,7 @@ export const Sidebar = memo(function Sidebar({
       expandedWorkspaces,
       normalizedQuery,
       threadListOrganizeMode,
+      showHiddenProjects,
     ],
     [
       sortedGroupedWorkspaces,
@@ -694,6 +647,7 @@ export const Sidebar = memo(function Sidebar({
       expandedWorkspaces,
       normalizedQuery,
       threadListOrganizeMode,
+      showHiddenProjects,
     ],
   );
   const { sidebarBodyRef, scrollFade, updateScrollFade } =
@@ -711,10 +665,7 @@ export const Sidebar = memo(function Sidebar({
     [workspaceNameById],
   );
 
-  const groupedWorkspacesForRender =
-    threadListOrganizeMode === "by_project_activity"
-      ? sortedGroupedWorkspaces
-      : filteredGroupedWorkspaces;
+  const groupedWorkspacesForRender = sortedGroupedWorkspaces;
   const isThreadsOnlyMode = threadListOrganizeMode === "threads_only";
 
   const handleAllThreadsAddMenuToggle = useCallback(
@@ -858,10 +809,11 @@ export const Sidebar = memo(function Sidebar({
   }, [allThreadsAddMenuAnchor]);
 
   useEffect(() => {
-    if (!isSearchOpen && searchQuery) {
+    if (!isSearchOpen) {
       setSearchQuery("");
+      setHiddenSearchQuery("");
     }
-  }, [isSearchOpen, searchQuery]);
+  }, [isSearchOpen]);
 
   return (
     <aside
@@ -882,16 +834,29 @@ export const Sidebar = memo(function Sidebar({
         onSetThreadListSortKey={onSetThreadListSortKey}
         threadListOrganizeMode={threadListOrganizeMode}
         onSetThreadListOrganizeMode={onSetThreadListOrganizeMode}
+        projectSortKey={threadListOrganizeMode === "by_project_activity" ? "activity" : projectSortKey}
+        onSetProjectSortKey={(value) => {
+          setProjectSortKey(value);
+          if (threadListOrganizeMode === "by_project_activity") onSetThreadListOrganizeMode("by_project");
+        }}
         onRefreshAllThreads={onRefreshAllThreads}
         refreshDisabled={refreshDisabled || refreshInProgress}
         refreshInProgress={refreshInProgress}
       />
       <SidebarSearchBar
         isSearchOpen={isSearchOpen}
-        searchQuery={searchQuery}
-        onSearchQueryChange={setSearchQuery}
-        onClearSearch={() => setSearchQuery("")}
+        searchQuery={showHiddenProjects ? hiddenSearchQuery : searchQuery}
+        searchLabel={showHiddenProjects ? "Search hidden projects" : "Search conversations"}
+        onSearchQueryChange={showHiddenProjects ? setHiddenSearchQuery : setSearchQuery}
+        onClearSearch={() => showHiddenProjects ? setHiddenSearchQuery("") : setSearchQuery("")}
       />
+      <div className="sidebar-visibility-bar">
+        <button type="button" className={`ghost sidebar-hidden-toggle${showHiddenProjects ? " is-active" : ""}`} aria-label={showHiddenProjects ? "Back to projects" : `Hidden projects (${hiddenProjects.length})`} aria-pressed={showHiddenProjects} onClick={() => { setShowHiddenProjects((current) => !current); setHiddenSearchQuery(""); setAddMenuAnchor(null); setAllThreadsAddMenuAnchor(null); }}>
+          {showHiddenProjects ? <ArrowLeft aria-hidden /> : <EyeOff aria-hidden />}
+          <span>{showHiddenProjects ? "Back to projects" : "Hidden projects"}</span>
+          {!showHiddenProjects && <span className="sidebar-hidden-count">{hiddenProjects.length}</span>}
+        </button>
+      </div>
       <div
         className={`workspace-drop-overlay${
           isWorkspaceDropActive ? " is-active" : ""
@@ -916,7 +881,26 @@ export const Sidebar = memo(function Sidebar({
         onScroll={updateScrollFade}
         ref={sidebarBodyRef}
       >
-        <div className="workspace-list">
+        {showHiddenProjects ? <HiddenProjects
+          projects={hiddenProjects}
+          groups={allGroupedWorkspaces}
+          activity={projectActivity}
+          query={isSearchOpen ? hiddenSearchQuery.trim().toLowerCase() : ""}
+          onShow={(id) => { showProject(id); if (hiddenProjects.length === 1) setShowHiddenProjects(false); }}
+          onShowAll={() => { showAllProjects(); setShowHiddenProjects(false); }}
+        /> : <div className="workspace-list">
+          {isSearchActive && <MessageSearchResults query={searchQuery} workspaces={workspaces} isThreadHidden={isThreadHidden} onSelectThread={onSelectThread} />}
+          {!isSearchActive && workspaces.length > 0 && <ActiveThreads
+            threads={activeThreads}
+            getProjectColor={getProjectColor}
+            activeWorkspaceId={activeWorkspaceId}
+            activeThreadId={activeThreadId}
+            collapsed={collapsedGroups.has("__active_projects__")}
+            onToggle={() => toggleGroupCollapse("__active_projects__")}
+            onSelect={onSelectThread}
+            onRemove={removeActiveThread}
+            onShowThreadMenu={(event, workspaceId, threadId) => showThreadMenu(event, workspaceId, threadId, !threadParentById[threadId], { isActiveThread: true })}
+          />}
           {pinnedThreadRows.length > 0 && (
             <div className="pinned-section">
               <div className="sidebar-section-header">
@@ -963,10 +947,12 @@ export const Sidebar = memo(function Sidebar({
             : (
                 <SidebarWorkspaceGroups
                   groups={groupedWorkspacesForRender}
+                  getProjectColor={getProjectColor}
                   hasWorkspaceGroups={hasWorkspaceGroups}
                   collapsedGroups={collapsedGroups}
                   ungroupedCollapseId={UNGROUPED_COLLAPSE_ID}
                   toggleGroupCollapse={toggleGroupCollapse}
+                  onReorderWorkspaceGroup={onReorderWorkspaceGroup}
                   cloneChildIds={cloneChildIds}
                   clonesBySource={clonesBySource}
                   worktreesByParent={worktreesByParent}
@@ -1015,8 +1001,8 @@ export const Sidebar = memo(function Sidebar({
           {!groupedWorkspacesForRender.length && (
             <div className="empty">
               {isSearchActive
-                ? "No conversations match your search."
-                : "Add a workspace to start."}
+                ? "No titles or project names match your search."
+                : hiddenProjects.length > 0 ? "All projects are hidden. Open Hidden projects to show them." : "Add a workspace to start."}
             </div>
           )}
           {isThreadsOnlyMode &&
@@ -1025,7 +1011,7 @@ export const Sidebar = memo(function Sidebar({
             pinnedThreadRows.length === 0 && (
               <div className="empty">No conversations yet.</div>
             )}
-        </div>
+        </div>}
       </div>
       <SidebarBottomRail
         sessionPercent={sessionPercent}

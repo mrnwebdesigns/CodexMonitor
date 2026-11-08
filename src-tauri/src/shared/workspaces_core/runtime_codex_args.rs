@@ -168,6 +168,7 @@ mod tests {
         let stdin = child.stdin.take().expect("dummy child stdin");
 
         WorkspaceSession {
+            history_sync_home: None,
             codex_args,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),

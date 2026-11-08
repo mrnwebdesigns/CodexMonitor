@@ -1,0 +1,214 @@
+.project-time {
+  flex-shrink: 0;
+}
+.project-time h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.project-time h2 svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-accent);
+}
+.project-time .project-info-header {
+  gap: 12px;
+}
+.project-time-content {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+.project-time-toolbar {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.project-time-toolbar label {
+  display: grid;
+  gap: 7px;
+  flex: 1;
+  min-width: 140px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.project-time select,
+.project-time input {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border-muted);
+  border-radius: 7px;
+  background: var(--surface-1);
+  color: var(--text-strong);
+  font: inherit;
+  padding: 8px 9px;
+}
+.project-time select:focus-visible,
+.project-time input:focus-visible {
+  outline: 2px solid var(--border-accent-soft);
+  outline-offset: 2px;
+}
+.project-time-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.project-time-stats > div {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-accent-soft);
+}
+.project-time-stats span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.project-time-stats strong {
+  color: var(--text-strong);
+  font-weight: 600;
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.project-time-stats small {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.project-time-estimate {
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+}
+.project-time-estimate label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.project-time-estimate input {
+  width: 72px;
+}
+.project-time-estimate p,
+.project-time-method,
+.project-time-updated {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.project-time-method {
+  margin: 0;
+}
+.project-time-updated {
+  margin: -8px 0 0;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+.project-time-details {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 14px;
+  min-width: 0;
+}
+.project-time-details > summary {
+  cursor: pointer;
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.project-time-details > summary span {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-left: 8px;
+}
+.project-time-views {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0;
+}
+.project-time-views button {
+  font-size: 11px;
+  padding: 7px 10px;
+}
+.project-time-views button[aria-pressed="true"] {
+  color: var(--text-accent);
+  background: var(--surface-active);
+}
+.project-time-table-scroll {
+  overflow-x: auto;
+}
+.project-time-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  color: var(--text-strong);
+  font-size: 12px;
+}
+.project-time-caption {
+  text-align: left;
+  padding: 0 8px 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.project-time-table th,
+.project-time-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.project-time-table thead th {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.project-time-table tbody th {
+  font-weight: 400;
+  max-width: 280px;
+  min-width: 145px;
+}
+.project-time-table td {
+  white-space: nowrap;
+}
+.project-time-table tfoot th,
+.project-time-table tfoot td {
+  border-bottom: 0;
+  font-weight: 600;
+}
+.project-time-thread {
+  text-align: left;
+  font-size: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-accent);
+  overflow-wrap: anywhere;
+}
+.project-time-bar {
+  display: block;
+  height: 3px;
+  max-width: 150px;
+  margin-top: 7px;
+  background: var(--surface-quiet);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.project-time-bar i {
+  display: block;
+  height: 100%;
+  background: var(--text-accent);
+  opacity: 0.6;
+}
+@media (max-width: 560px) {
+  .project-time .project-info-header {
+    flex-wrap: wrap;
+  }
+  .project-time-stats {
+    gap: 10px;
+  }
+  .project-time-stats strong {
+    font-size: 21px;
+  }
+  .project-time-details > summary span {
+    display: block;
+    margin-left: 16px;
+  }
+}

@@ -51,7 +51,7 @@ export function buildThreadSummaryFromThread({
   const fallbackName = `Agent ${fallbackIndex + 1}`;
   const name = customName
     ? customName
-    : clampThreadName(preview) ?? fallbackName;
+    : clampThreadName(asString(thread.name ?? thread.title ?? "").trim() || preview) ?? fallbackName;
   const metadata = extractThreadCodexMetadata(thread);
   if (shouldHideSubagentThreadFromSidebar(thread.source)) {
     return null;

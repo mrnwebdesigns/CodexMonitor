@@ -6,6 +6,7 @@ import {
   isDuplicateGroupName,
   isReservedGroupName,
   normalizeGroupName,
+  type ReorderWorkspaceGroup,
 } from "../domain/workspaceGroups";
 
 type UseWorkspaceGroupOpsOptions = {
@@ -102,26 +103,28 @@ export function useWorkspaceGroupOps({
     [appSettings, onUpdateAppSettings, updateWorkspaceGroups],
   );
 
-  const moveWorkspaceGroup = useCallback(
-    async (groupId: string, direction: "up" | "down") => {
+  const reorderWorkspaceGroup = useCallback<ReorderWorkspaceGroup>(
+    async (groupId, targetGroupId, position) => {
       if (!appSettings || !onUpdateAppSettings) {
         return null;
       }
       const ordered = workspaceGroups.slice();
       const index = ordered.findIndex((group) => group.id === groupId);
-      if (index === -1) {
+      if (index === -1 || groupId === targetGroupId) {
         return null;
       }
-      const nextIndex = direction === "up" ? index - 1 : index + 1;
-      if (nextIndex < 0 || nextIndex >= ordered.length) {
+      const [moved] = ordered.splice(index, 1);
+      const targetIndex = ordered.findIndex((group) => group.id === targetGroupId);
+      if (targetIndex === -1) {
         return null;
       }
-      const nextOrdered = ordered.slice();
-      const temp = nextOrdered[index];
-      nextOrdered[index] = nextOrdered[nextIndex];
-      nextOrdered[nextIndex] = temp;
+      const nextIndex = targetIndex + (position === "after" ? 1 : 0);
+      if (nextIndex === index) {
+        return null;
+      }
+      ordered.splice(nextIndex, 0, moved);
       const nextOrderById = new Map(
-        nextOrdered.map((group, idx) => [group.id, idx]),
+        ordered.map((group, idx) => [group.id, idx]),
       );
       const currentGroups = appSettings.workspaceGroups ?? [];
       const nextGroups = currentGroups.map((group) => {
@@ -135,6 +138,23 @@ export function useWorkspaceGroupOps({
       return true;
     },
     [appSettings, onUpdateAppSettings, updateWorkspaceGroups, workspaceGroups],
+  );
+
+  const moveWorkspaceGroup = useCallback(
+    async (groupId: string, direction: "up" | "down") => {
+      const index = workspaceGroups.findIndex((group) => group.id === groupId);
+      const target = workspaceGroups[index + (direction === "up" ? -1 : 1)];
+      if (index === -1 || !target) {
+        return null;
+      }
+      const result = await reorderWorkspaceGroup(
+        groupId,
+        target.id,
+        direction === "up" ? "before" : "after",
+      );
+      return result ? true : null;
+    },
+    [reorderWorkspaceGroup, workspaceGroups],
   );
 
   const deleteWorkspaceGroup = useCallback(
@@ -186,6 +206,7 @@ export function useWorkspaceGroupOps({
     createWorkspaceGroup,
     deleteWorkspaceGroup,
     moveWorkspaceGroup,
+    reorderWorkspaceGroup,
     renameWorkspaceGroup,
   };
 }

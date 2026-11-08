@@ -19,6 +19,9 @@ mod diff;
 mod github;
 #[path = "git_ui_core/log.rs"]
 mod log;
+#[path = "git_ui_core/setup.rs"]
+mod setup;
+pub(crate) use setup::GitInitSelection;
 
 #[cfg(test)]
 #[path = "git_ui_core/tests.rs"]
@@ -46,9 +49,20 @@ pub(crate) async fn init_git_repo_core(
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
     workspace_id: String,
     branch: String,
-    force: bool,
+    _force: bool,
+    setup: Option<GitInitSelection>,
 ) -> Result<Value, String> {
-    commands::init_git_repo_inner(workspaces, workspace_id, branch, force).await
+    setup::initialize(workspaces, workspace_id, branch, setup).await
+}
+
+pub(crate) async fn preview_git_init_core(
+    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
+    workspace_id: String,
+    root: String,
+    branch: String,
+    excluded_paths: Vec<String>,
+) -> Result<Value, String> {
+    setup::preview(workspaces, workspace_id, root, branch, excluded_paths).await
 }
 
 pub(crate) async fn create_github_repo_core(

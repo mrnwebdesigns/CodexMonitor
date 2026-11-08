@@ -69,6 +69,12 @@ pub(super) async fn try_handle(
 ) -> Option<Result<Value, String>> {
     match method {
         "list_workspaces" => Some(serialize_value(state.list_workspaces().await)),
+        "discover_project" => {
+            let request = parse_request_or_err!(params, workspace_rpc::DiscoverProjectRequest);
+            Some(serialize_result(workspaces_core::discover_project_core(
+                &state.workspaces, &request.workspace_id, request.website, request.project_type,
+            )).await)
+        }
         "is_workspace_path_dir" => {
             let request = parse_request_or_err!(params, workspace_rpc::IsWorkspacePathDirRequest);
             Some(serialize_value(
@@ -267,6 +273,24 @@ pub(super) async fn try_handle(
             let days = parse_optional_u32(params, "days");
             let workspace_path = parse_optional_string(params, "workspacePath");
             Some(serialize_result(state.local_usage_snapshot(days, workspace_path)).await)
+        }
+        "project_time_snapshot" => {
+            let request = parse_request_or_err!(params, workspace_rpc::ProjectTimeRequest);
+            Some(serialize_result(state.project_time_snapshot(request.workspace_id, request.days)).await)
+        }
+        "search_messages" => {
+            let request = parse_request_or_err!(params, crate::shared::message_search_core::SearchRequest);
+            Some(crate::shared::message_search_core::search_core(&state.workspaces, request).await)
+        }
+        "message_search_status" => {
+            Some(crate::shared::message_search_core::status_core().await)
+        }
+        "message_search_control" => {
+            let action = match parse_string(params, "action") {
+                Ok(action) => action,
+                Err(error) => return Some(Err(error)),
+            };
+            Some(crate::shared::message_search_core::control_core(action).await)
         }
         _ => None,
     }

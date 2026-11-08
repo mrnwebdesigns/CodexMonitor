@@ -11,6 +11,12 @@ export type WorkspaceGroupSection = {
   workspaces: WorkspaceInfo[];
 };
 
+export type ReorderWorkspaceGroup = (
+  groupId: string,
+  targetGroupId: string,
+  position: "before" | "after",
+) => Promise<boolean | null>;
+
 export function normalizeGroupName(name: string) {
   return name.trim();
 }

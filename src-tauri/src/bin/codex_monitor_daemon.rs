@@ -82,12 +82,12 @@ use shared::process_core::kill_child_process_tree;
 use shared::prompts_core::{self, CustomPromptEntry};
 use shared::{
     agents_config_core, codex_aux_core, codex_core, files_core, git_core, git_ui_core,
-    local_usage_core, settings_core, workspaces_core, worktree_core,
+    local_usage_core, project_time_core, settings_core, workspaces_core, worktree_core,
 };
 use storage::{read_settings, read_workspaces};
 use types::{
     AppSettings, GitCommitDiff, GitFileDiff, GitHubIssuesResponse, GitHubPullRequestComment,
-    GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogResponse, LocalUsageSnapshot,
+    GitHubPullRequestDiff, GitHubPullRequestsResponse, GitLogResponse, LocalUsageSnapshot, ProjectTimeSnapshot,
     WorkspaceEntry, WorkspaceInfo, WorkspaceSettings, WorktreeSetupStatus,
 };
 use workspace_settings::apply_workspace_settings_update;
@@ -1020,8 +1020,9 @@ impl DaemonState {
         workspace_id: String,
         branch: String,
         force: bool,
+        setup: Option<git_ui_core::GitInitSelection>,
     ) -> Result<Value, String> {
-        git_ui_core::init_git_repo_core(&self.workspaces, workspace_id, branch, force).await
+        git_ui_core::init_git_repo_core(&self.workspaces, workspace_id, branch, force, setup).await
     }
 
     async fn create_github_repo(
@@ -1335,6 +1336,14 @@ impl DaemonState {
         workspace_path: Option<String>,
     ) -> Result<LocalUsageSnapshot, String> {
         local_usage_core::local_usage_snapshot_core(&self.workspaces, days, workspace_path).await
+    }
+
+    async fn project_time_snapshot(
+        &self,
+        workspace_id: String,
+        days: Option<u32>,
+    ) -> Result<ProjectTimeSnapshot, String> {
+        project_time_core::project_time_snapshot_core(&self.workspaces, workspace_id, days).await
     }
 
     async fn menu_set_accelerators(&self, _updates: Vec<Value>) -> Result<(), String> {
@@ -1669,6 +1678,7 @@ mod tests {
         let stdin = child.stdin.take().expect("dummy child stdin");
 
         Arc::new(WorkspaceSession {
+            history_sync_home: None,
             codex_args: None,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
@@ -1764,6 +1774,19 @@ mod tests {
             assert!(result.get("days").and_then(Value::as_array).is_some());
             assert!(result.get("totals").is_some());
             let _ = std::fs::remove_dir_all(&tmp);
+        });
+    }
+
+    #[test]
+    fn rpc_project_time_requires_an_existing_workspace() {
+        run_async_test(async {
+            let tmp = make_temp_dir("rpc-project-time");
+            let state = test_state(&tmp);
+            for params in [json!({ "days": 7 }), json!({ "workspaceId": "unknown", "days": 7 })] {
+                let result = rpc::handle_rpc_request(&state, "project_time_snapshot", params, "daemon-test".into()).await;
+                assert!(result.is_err(), "project time must never fall back to all workspaces");
+            }
+            let _ = std::fs::remove_dir_all(tmp);
         });
     }
 
@@ -1930,6 +1953,22 @@ fn main() {
             tx: events_tx.clone(),
         };
         let state = Arc::new(DaemonState::load(&config, event_sink));
+        shared::message_search_core::start_default_worker().await;
+        {
+            let state = Arc::clone(&state);
+            tokio::spawn(async move {
+                loop {
+                    match shared::history_sync_core::sync_once(None).await {
+                        Ok(Some(report)) => shared::history_sync_core::emit_changes(
+                            &report, &*state.workspaces.lock().await, &state.event_sink,
+                        ),
+                        Ok(None) => {}
+                        Err(error) => eprintln!("Automatic history import paused: {error}"),
+                    }
+                    tokio::time::sleep(shared::history_sync_core::INTERVAL).await;
+                }
+            });
+        }
         let config = Arc::new(config);
 
         let listener = match TcpListener::bind(config.listen).await {

@@ -208,7 +208,7 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 196px;
+  width: 218px;
   max-width: calc(100vw - 24px);
   border-radius: 10px;
   padding: 6px;
@@ -555,6 +555,90 @@
 
 .workspace-group + .workspace-group {
   margin-top: 10px;
+}
+
+.workspace-group {
+  position: relative;
+}
+
+.workspace-group.is-dragging {
+  opacity: 0.5;
+}
+
+.workspace-group[data-drop-position]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--text-accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.workspace-group[data-drop-position="before"]::after {
+  top: -5px;
+}
+
+.workspace-group[data-drop-position="after"]::after {
+  bottom: -5px;
+}
+
+.workspace-group-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-app-region: no-drag;
+}
+
+.workspace-group-drag-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-group-drag-handle:hover {
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
+.workspace-group-drag-handle:active {
+  cursor: grabbing;
+}
+
+.workspace-group-drag-handle:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: 2px;
+}
+
+.workspace-group-drag-handle[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: wait;
+}
+
+.workspace-group-sort-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.workspace-group-sort-error {
+  margin: 4px 8px;
+  color: var(--status-error);
+  font-size: 12px;
 }
 
 .workspace-group-header {
@@ -1988,4 +2072,165 @@
 .app.sidebar-collapsed .sidebar-resizer {
   opacity: 0;
   pointer-events: none;
+}
+
+
+/* Project directory */
+.active-threads {
+  margin-bottom: 14px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.active-threads-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-strong);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+.active-threads-heading > svg { width: 14px; height: 14px; color: var(--text-accent); }
+.active-threads-heading > svg:last-child { margin-left: auto; color: var(--text-muted); transition: transform 120ms ease; }
+.active-threads-heading > svg.is-collapsed { transform: rotate(-90deg); }
+.active-threads-count { color: var(--text-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.active-threads-list { display: flex; flex-direction: column; gap: 3px; }
+.active-thread-row { display: flex; align-items: center; gap: 2px; }
+.active-thread-remove { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; padding: 6px; color: var(--text-muted); }
+.active-thread-remove svg { width: 14px; height: 14px; }
+.active-thread-remove:hover { color: var(--text-strong); background: var(--surface-hover); }
+.active-thread-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+}
+.active-thread-link:hover { background: var(--surface-hover); color: var(--text-strong); }
+.active-thread-link.is-selected { background: var(--cm-surface-panel-active); border-color: var(--cm-border-accent-strong); }
+.active-thread-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--text-faint); }
+.active-thread-dot.is-running { background: var(--text-accent); box-shadow: 0 0 0 3px var(--border-accent-soft); }
+.active-thread-dot.is-unread { background: var(--text-accent); box-shadow: 0 0 0 3px var(--border-accent-soft); }
+.active-thread-unread { color: var(--text-accent); font-weight: 650; }
+.active-thread-copy { display: grid; gap: 4px; min-width: 0; }
+.active-thread-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-strong); font-size: 12px; font-weight: 550; }
+.active-thread-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; color: var(--text-muted); }
+.active-threads-empty { margin: 0; padding: 8px; font-size: 11px; line-height: 1.5; color: var(--text-muted); }
+.workspace-group { --project-group-accent: var(--text-muted); }
+.workspace-group[data-group-kind="clients"] { --project-group-accent: var(--text-accent); }
+.workspace-group[data-group-kind="internal"] { --project-group-accent: var(--text-strong); }
+.workspace-group-header {
+  min-height: 34px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sidebar);
+}
+.workspace-group-label { display: flex; align-items: center; gap: 8px; flex: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; }
+.workspace-group-label svg { width: 14px; height: 14px; color: var(--project-group-accent); }
+.workspace-group-count { padding: 2px 6px; border-radius: 5px; color: var(--text-muted); background: var(--surface-card); font-size: 10px; font-variant-numeric: tabular-nums; }
+.workspace-group-content { gap: 8px; }
+.workspace-group + .workspace-group { margin-top: 18px; }
+.workspace-group .workspace-row { padding: 9px 10px; }
+.workspace-group .workspace-row::before { border-radius: 10px; background: var(--cm-surface-panel-quiet); border-color: var(--border-subtle); }
+.workspace-group .workspace-row.active::before { background: var(--cm-surface-panel-active); border-color: var(--cm-border-accent-strong); }
+.workspace-group .workspace-row:hover::before { background: var(--surface-hover); }
+.workspace-group .workspace-name { font-size: 12px; line-height: 1.3; }
+.active-thread-link:focus-visible, .active-threads-heading:focus-visible, .active-thread-remove:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
+
+
+.sidebar-visibility-bar { padding: 2px 0 5px; }
+.sidebar-hidden-toggle { display: flex; align-items: center; gap: 7px; width: 100%; padding: 6px 8px; color: var(--text-muted); font-size: 11px; border-radius: 7px; }
+.sidebar-hidden-toggle svg { width: 13px; height: 13px; flex-shrink: 0; }
+.sidebar-hidden-toggle:hover, .sidebar-hidden-toggle.is-active { color: var(--text-strong); background: var(--surface-hover); }
+.sidebar-hidden-count { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-faint); }
+.hidden-projects { padding: 10px 0; }
+.hidden-projects-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.hidden-projects-heading h2 { margin: 0; color: var(--text-strong); font-size: 13px; font-weight: 600; }
+.hidden-projects-heading button { padding: 5px 7px; font-size: 10px; }
+.hidden-projects-help { margin: 8px 0 18px; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.hidden-projects-group { display: grid; gap: 6px; margin-bottom: 20px; }
+.hidden-projects-group h3 { margin: 0 0 4px; color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; }
+.hidden-project-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; border: 1px solid var(--border-subtle); border-radius: 9px; background: var(--cm-surface-panel-quiet); padding: 10px; }
+.hidden-project-row:hover { background: var(--surface-hover); }
+.hidden-project-copy { display: grid; gap: 5px; min-width: 0; }
+.hidden-project-copy strong { color: var(--text-strong); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hidden-project-copy small { color: var(--text-accent); font-size: 10px; }
+.hidden-project-show { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+.hidden-project-show svg { width: 12px; height: 12px; }
+.sidebar-hidden-toggle:focus-visible, .hidden-project-row:focus-visible { outline: 2px solid var(--text-accent); outline-offset: 2px; }
+
+/* Color tints inherit the current sidebar surface; labels retain theme contrast. */
+.sidebar {
+  --sidebar-color-surface: var(--surface-sidebar);
+}
+
+.app.reduced-transparency .sidebar {
+  --sidebar-color-surface: var(--surface-sidebar-opaque);
+}
+
+.workspace-row[data-project-color],
+.active-thread-link[data-project-color] {
+  --sidebar-color-fill: color-mix(in srgb, var(--sidebar-item-tint, var(--sidebar-item-color)) 9%, var(--sidebar-color-surface));
+  position: relative;
+}
+
+.workspace-row[data-project-color]:hover,
+.active-thread-link[data-project-color]:hover {
+  --sidebar-color-fill: color-mix(in srgb, var(--sidebar-item-tint, var(--sidebar-item-color)) 16%, var(--sidebar-color-surface));
+}
+
+.workspace-row[data-project-color].active,
+.active-thread-link[data-project-color].is-selected {
+  --sidebar-color-fill: color-mix(in srgb, var(--sidebar-item-tint, var(--sidebar-item-color)) 23%, var(--sidebar-color-surface));
+}
+
+.workspace-row[data-project-color^="custom:"],
+.active-thread-link[data-project-color^="custom:"] {
+  --sidebar-item-tint: color-mix(in srgb, var(--sidebar-item-color) 65%, var(--surface-sidebar-opaque));
+}
+
+.sidebar .workspace-row[data-project-color]::before,
+.active-thread-link[data-project-color] {
+  background: var(--sidebar-color-fill);
+  border-color: color-mix(in srgb, var(--sidebar-item-color) 35%, var(--border-subtle));
+}
+
+.workspace-row[data-project-color].active::before,
+.active-thread-link[data-project-color].is-selected {
+  border-color: var(--cm-border-accent-strong);
+}
+
+.workspace-row[data-project-color]::after,
+.active-thread-link[data-project-color]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--sidebar-item-color);
+  pointer-events: none;
+}
+
+.workspace-row[data-project-color]:focus-visible {
+  outline: 2px solid var(--text-accent);
+  outline-offset: -2px;
+}
+
+.workspace-row[data-project-color] .workspace-summary,
+.active-thread-link[data-project-color] .active-thread-meta {
+  color: var(--text-stronger);
 }

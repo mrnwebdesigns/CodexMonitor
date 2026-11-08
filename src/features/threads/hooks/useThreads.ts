@@ -21,6 +21,7 @@ import { useThreadAccountInfo } from "./useThreadAccountInfo";
 import { useThreadRateLimits } from "./useThreadRateLimits";
 import { useThreadSelectors } from "./useThreadSelectors";
 import { useThreadStatus } from "./useThreadStatus";
+import { loadUnreadThreadStatuses, useThreadReadState } from "./useThreadReadState";
 import { useThreadUserInput } from "./useThreadUserInput";
 import { useThreadTitleAutogeneration } from "./useThreadTitleAutogeneration";
 import { useDetachedReviewTracking } from "./useDetachedReviewTracking";
@@ -104,6 +105,7 @@ export function useThreads({
     maxItemsPerThread,
     (initialMaxItemsPerThread) => ({
       ...initialState,
+      threadStatusById: loadUnreadThreadStatuses(),
       maxItemsPerThread: initialMaxItemsPerThread,
     }),
   );
@@ -149,6 +151,11 @@ export function useThreads({
     activeThreadIdByWorkspace: state.activeThreadIdByWorkspace,
     itemsByThread: state.itemsByThread,
     threadsByWorkspace: state.threadsByWorkspace,
+  });
+  const onThreadCompleted = useThreadReadState({
+    activeThreadId,
+    threadStatusById: state.threadStatusById,
+    dispatch,
   });
 
   const getCurrentRateLimits = useCallback(
@@ -408,6 +415,7 @@ export function useThreads({
 
   const threadHandlers = useThreadEventHandlers({
     activeThreadId,
+    onThreadCompleted,
     dispatch,
     getItemsForThread: (threadId) => itemsByThreadRef.current[threadId] ?? [],
     planByThreadRef,
@@ -889,6 +897,7 @@ export function useThreads({
     pinThread,
     unpinThread,
     isThreadPinned,
+    isThreadHidden,
     getPinTimestamp,
     renameThread,
     startThread,

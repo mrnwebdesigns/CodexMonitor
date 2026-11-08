@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use git2::{BranchType, Repository, Status, StatusOptions};
@@ -78,27 +77,7 @@ async fn gh_git_protocol(repo_root: &Path) -> String {
         .unwrap_or_else(|_| "https".to_string())
 }
 
-fn count_effective_dir_entries(root: &Path) -> Result<usize, String> {
-    let entries = fs::read_dir(root).map_err(|err| format!("Failed to read directory: {err}"))?;
-    let mut count = 0usize;
-    for entry in entries {
-        let entry = entry.map_err(|err| {
-            format!(
-                "Failed to read directory entry in {}: {err}",
-                root.display()
-            )
-        })?;
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name == ".git" || name == ".DS_Store" || name == "Thumbs.db" {
-            continue;
-        }
-        count += 1;
-    }
-    Ok(count)
-}
-
-fn validate_branch_name(name: &str) -> Result<String, String> {
+pub(super) fn validate_branch_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("Branch name is required.".to_string());
@@ -524,68 +503,6 @@ pub(super) async fn list_git_roots_inner(
     let root = PathBuf::from(&entry.path);
     let depth = depth.unwrap_or(2).clamp(1, 6);
     Ok(scan_git_roots(&root, depth, 200))
-}
-
-pub(super) async fn init_git_repo_inner(
-    workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,
-    workspace_id: String,
-    branch: String,
-    force: bool,
-) -> Result<Value, String> {
-    const INITIAL_COMMIT_MESSAGE: &str = "Initial commit";
-
-    let entry = workspace_entry_for_id(workspaces, &workspace_id).await?;
-    let repo_root = resolve_git_root(&entry)?;
-    let branch = validate_branch_name(&branch)?;
-
-    if Repository::open(&repo_root).is_ok() {
-        return Ok(json!({ "status": "already_initialized" }));
-    }
-
-    if !force {
-        let entry_count = count_effective_dir_entries(&repo_root)?;
-        if entry_count > 0 {
-            return Ok(json!({ "status": "needs_confirmation", "entryCount": entry_count }));
-        }
-    }
-
-    let init_with_branch =
-        run_git_command(&repo_root, &["init", "--initial-branch", branch.as_str()]).await;
-
-    if let Err(error) = init_with_branch {
-        let lower = error.to_lowercase();
-        let unsupported = lower.contains("initial-branch")
-            && (lower.contains("unknown option")
-                || lower.contains("unrecognized option")
-                || lower.contains("unknown switch")
-                || lower.contains("usage:"));
-        if !unsupported {
-            return Err(error);
-        }
-
-        run_git_command(&repo_root, &["init"]).await?;
-        let head_ref = format!("refs/heads/{branch}");
-        run_git_command(&repo_root, &["symbolic-ref", "HEAD", head_ref.as_str()]).await?;
-    }
-
-    let commit_error = match run_git_command(&repo_root, &["add", "-A"]).await {
-        Ok(()) => match run_git_command(
-            &repo_root,
-            &["commit", "--allow-empty", "-m", INITIAL_COMMIT_MESSAGE],
-        )
-        .await
-        {
-            Ok(()) => None,
-            Err(err) => Some(err),
-        },
-        Err(err) => Some(err),
-    };
-
-    if let Some(commit_error) = commit_error {
-        return Ok(json!({ "status": "initialized", "commitError": commit_error }));
-    }
-
-    Ok(json!({ "status": "initialized" }))
 }
 
 pub(super) async fn create_github_repo_inner(

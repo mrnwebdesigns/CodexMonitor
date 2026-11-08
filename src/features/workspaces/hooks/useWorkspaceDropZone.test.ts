@@ -3,6 +3,9 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useWorkspaceDropZone } from "./useWorkspaceDropZone";
+import { resolveDroppedDirectories } from "@services/tauri";
+
+vi.mock("@services/tauri", () => ({ resolveDroppedDirectories: vi.fn() }));
 
 let mockOnDragDropEvent:
   | ((event: {
@@ -66,6 +69,25 @@ function renderDropHook(options: {
 describe("useWorkspaceDropZone", () => {
   beforeEach(() => {
     mockOnDragDropEvent = null;
+    vi.mocked(resolveDroppedDirectories).mockReset().mockResolvedValue([]);
+  });
+
+  it("resolves HTML directory entries without relying on a File.path property", async () => {
+    vi.mocked(resolveDroppedDirectories).mockResolvedValueOnce(["/tmp/project"]);
+    const onDropPaths = vi.fn();
+    const hook = renderDropHook({ onDropPaths });
+    await act(async () => {
+      await hook.result.handleDrop({
+        dataTransfer: { types: ["Files"], files: [], items: [{
+          kind: "file", getAsFile: () => null,
+          webkitGetAsEntry: () => ({ name: "project", isDirectory: true }),
+        }] },
+        preventDefault: vi.fn(),
+      } as unknown as React.DragEvent<HTMLElement>);
+    });
+    expect(resolveDroppedDirectories).toHaveBeenCalledExactlyOnceWith(["project"]);
+    expect(onDropPaths).toHaveBeenCalledExactlyOnceWith(["/tmp/project"]);
+    hook.unmount();
   });
 
   it("tracks drag over state for file transfers", () => {

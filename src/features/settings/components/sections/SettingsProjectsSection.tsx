@@ -7,6 +7,9 @@ import {
   SettingsSubsection,
 } from "@/features/design-system/components/settings/SettingsPrimitives";
 import type { WorkspaceGroup, WorkspaceInfo } from "@/types";
+import { useProjectColors } from "@app/hooks/useProjectColors";
+import { isSidebarColor, sidebarColorStyle } from "@app/utils/sidebarColors";
+import { SettingsProjectColors } from "./SettingsProjectColors";
 
 type GroupedWorkspaces = Array<{
   id: string | null;
@@ -57,11 +60,13 @@ export function SettingsProjectsSection({
   onMoveWorkspace,
   onDeleteWorkspace,
 }: SettingsProjectsSectionProps) {
+  const { palette, getProjectColor, setProjectColor, addCustomColor, removeCustomColor } = useProjectColors();
   return (
     <SettingsSection
       title="Projects"
       subtitle="Group related workspaces and reorder projects within each group."
     >
+      <SettingsProjectColors palette={palette} onAddColor={addCustomColor} onRemoveColor={removeCustomColor} />
       <SettingsSubsection
         title="Groups"
         subtitle="Create group labels for related repositories."
@@ -209,6 +214,16 @@ export function SettingsProjectsSection({
                     <div className="settings-project-path">{workspace.path}</div>
                   </div>
                   <div className="settings-project-actions">
+                    <span className="settings-color-swatch settings-project-color-preview" style={sidebarColorStyle(getProjectColor(workspace.id))} aria-hidden />
+                    <select
+                      className="settings-select settings-select--compact settings-project-color-select"
+                      aria-label={`Color for ${workspace.name}`}
+                      value={getProjectColor(workspace.id) ?? ""}
+                      onChange={(event) => setProjectColor(workspace.id, isSidebarColor(event.target.value) ? event.target.value : null)}
+                    >
+                      <option value="">No color</option>
+                      {palette.map((color) => <option key={color.id} value={color.id}>{color.label}</option>)}
+                    </select>
                     <select
                       className="settings-select settings-select--compact"
                       value={groupValue}
