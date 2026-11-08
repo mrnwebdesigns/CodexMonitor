@@ -1,3 +1,4 @@
+import AppWindow from "lucide-react/dist/esm/icons/app-window";
 import { lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import successSoundUrl from "@/assets/success-notification.mp3";
 import errorSoundUrl from "@/assets/error-notification.mp3";
@@ -1899,7 +1900,21 @@ export default function MainApp() {
   const browserAvailable = !isCompact && Boolean(activeWorkspace) && !showHome;
   const browserObscured = Boolean(appModalsProps.settingsOpen || appModalsProps.renamePrompt || appModalsProps.initGitRepoPrompt || appModalsProps.worktreePrompt || appModalsProps.clonePrompt || appModalsProps.workspaceFromUrlPrompt || appModalsProps.mobileRemoteWorkspacePathPrompt || appModalsProps.branchSwitcher);
   return <MainAppShell {...mainAppShellProps}
-    browserToggleNode={browserAvailable ? <button type="button" className={`main-header-action${browser.open ? " is-active" : ""}`} aria-pressed={browser.open} onClick={() => browser.setOpen(!browser.open)}>Browser</button> : undefined}
+    browserToggleNode={browserAvailable ? (
+      <button
+        type="button"
+        className={`main-header-action browser-toggle ds-tooltip-trigger${browser.open ? " is-active" : ""}`}
+        aria-label="Browser"
+        aria-pressed={browser.open}
+        title="Browser"
+        data-tooltip="Browser"
+        data-tooltip-placement="bottom"
+        data-tauri-drag-region="false"
+        onClick={() => browser.setOpen(!browser.open)}
+      >
+        <AppWindow size={14} aria-hidden />
+      </button>
+    ) : undefined}
     browserPanelNode={browserAvailable && browser.open && activeWorkspace ? <BrowserPanel
       workspaceId={activeWorkspace.id}
       navigationRequest={browser.navigationRequest?.workspaceId === activeWorkspace.id ? browser.navigationRequest : null}

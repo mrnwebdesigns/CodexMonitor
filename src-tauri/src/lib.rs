@@ -213,6 +213,7 @@ pub fn run() {
             #[cfg(desktop)] browser::browser_set_visible,
             #[cfg(desktop)] browser::browser_action,
             #[cfg(desktop)] browser::browser_capture,
+            #[cfg(desktop)] browser::browser_runtime_info,
             settings::get_app_settings,
             settings::update_app_settings,
             settings::get_codex_config_path,
@@ -349,7 +350,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
 
+    #[cfg(chromium_browser)]
+    browser::chromium::prepare(app.handle());
+
     app.run(|app_handle, event| {
+        #[cfg(chromium_browser)]
+        if matches!(event, RunEvent::Exit) {
+            browser::chromium::shutdown();
+        }
         #[cfg(desktop)]
         if let RunEvent::ExitRequested { api, .. } = event {
             if !EXIT_CLEANUP_IN_PROGRESS.load(Ordering::SeqCst)

@@ -1,9 +1,40 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
+import MoveDiagonal from "lucide-react/dist/esm/icons/move-diagonal";
 import { PanelFrame, PanelHeader } from "@/features/design-system/components/panel/PanelPrimitives";
-import { browserAction, browserCapture, browserGetUrl, browserNavigate, browserSetBounds, browserSetVisible } from "@services/tauri";
+import { browserAction, browserCapture, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible } from "@services/tauri";
 import { subscribeBrowserPage, subscribeBrowserSelection } from "@services/events";
 import type { BrowserAnnotation, BrowserSelection } from "../browserTypes";
 import { formatBrowserAnnotations, normalizeBrowserUrl } from "../utils/browserAnnotations";
+import {
+  BrowserDeviceControls, MAX_DIMENSION, MIN_DIMENSION, RESPONSIVE,
+  type DeviceSettings, type DeviceSize,
+} from "./BrowserDeviceControls";
+
+const RESIZE_GRIP_SIZE = 20;
+
+function clampDimension(value: number) {
+  return Math.min(MAX_DIMENSION, Math.max(MIN_DIMENSION, Math.round(value)));
+}
+
+function measureViewport(rect: DOMRect, device: DeviceSettings | null) {
+  const { x, y, width, height } = rect;
+  if (!device) return { bounds: { x, y, width, height }, device: undefined };
+  const { size, preset } = device;
+  const responsive = preset === RESPONSIVE;
+  const gutter = responsive ? RESIZE_GRIP_SIZE : 0;
+  const scale = Math.min(1, (width - gutter) / size.width, (height - gutter) / size.height);
+  const viewWidth = size.width * scale;
+  const viewHeight = size.height * scale;
+  return {
+    bounds: {
+      x: responsive ? x : x + (width - viewWidth) / 2,
+      y: responsive ? y : y + (height - viewHeight) / 2,
+      width: viewWidth,
+      height: viewHeight,
+    },
+    device: { ...size, scale },
+  };
+}
 
 export type BrowserPanelProps = {
   workspaceId: string;
@@ -29,21 +60,52 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runtime, setRuntime] = useState<{ engine: string; version: string } | null>(null);
+  const [deviceEnabled, setDeviceEnabled] = useState(false);
+  const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>({
+    preset: RESPONSIVE,
+    size: { width: 390, height: 844 },
+  });
+  const device = deviceEnabled ? deviceSettings : null;
+  const responsive = device?.preset === RESPONSIVE;
+  const chromiumControls = runtime?.engine.startsWith("Chromium");
   const viewport = useRef<HTMLDivElement>(null);
+  const resizeGrip = useRef<HTMLButtonElement>(null);
+  const resizeStart = useRef<{ pointerId: number; x: number; y: number; scale: number; size: DeviceSize } | null>(null);
+  const deviceRef = useRef(device);
+  const scheduleBounds = useRef<(() => void) | null>(null);
+  const feedback = useRef<HTMLTextAreaElement>(null);
   const navigationRequested = useRef(Boolean(navigationRequest));
   const annotationWorkspace = useRef(workspaceId);
   const visibleRef = useRef(visible);
+  const layoutRevision = useRef(0);
   visibleRef.current = visible;
   // Native web content has its own view; keep its rectangle aligned with this slot.
   const syncBounds = useCallback(async () => {
+    const revision = layoutRevision.current;
     const rect = viewport.current?.getBoundingClientRect();
     if (!rect || !visibleRef.current || rect.width < 80 || rect.height < 80) {
       await browserSetVisible(false);
       return;
     }
-    await browserSetBounds({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+    const { bounds, device: emulation } = measureViewport(rect, deviceRef.current);
+    if (resizeGrip.current) {
+      resizeGrip.current.style.transform = `translate(${bounds.width}px, ${bounds.height}px)`;
+    }
+    if (emulation) await browserSetBounds(bounds, emulation);
+    else await browserSetBounds(bounds);
+    if (revision !== layoutRevision.current || !visibleRef.current) return;
     await browserSetVisible(true);
   }, []);
+
+  useLayoutEffect(() => {
+    deviceRef.current = device;
+    scheduleBounds.current?.();
+  }, [device]);
+
+  useLayoutEffect(() => {
+    if (selection && visibleRef.current) feedback.current?.focus({ preventScroll: true });
+  }, [selection]);
 
   useEffect(() => {
     if (annotationWorkspace.current !== workspaceId) {
@@ -55,10 +117,12 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
 
   useEffect(() => {
     let live = true;
+    void browserRuntimeInfo().then((value) => { if (live) setRuntime(value); }).catch(() => {});
     void browserGetUrl().then((url) => { if (live && url && !navigationRequested.current) { setAddress(url); setHasPage(true); } }).catch(() => {});
     const unsubscribePage = subscribeBrowserPage((event) => {
       setAddress(event.url); setHasPage(true); setLoading(event.loading);
       if (event.title) setPageTitle(event.title);
+      if (event.error) { setError(event.error); setLoading(false); }
       setAnnotating(false);
     });
     const unsubscribeSelection = subscribeBrowserSelection((event) => {
@@ -79,12 +143,21 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     if (!hasPage || !visible) { void browserSetVisible(false).catch(() => {}); return; }
     let frame = 0;
     const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { void syncBounds().catch((reason) => setError(String(reason))); }); };
+    scheduleBounds.current = update;
     const observer = new ResizeObserver(update);
     if (viewport.current) observer.observe(viewport.current);
     window.addEventListener("resize", update);
     window.addEventListener("transitionend", update);
     update();
-    return () => { observer.disconnect(); window.removeEventListener("resize", update); window.removeEventListener("transitionend", update); cancelAnimationFrame(frame); void browserSetVisible(false).catch(() => {}); };
+    return () => {
+      layoutRevision.current += 1;
+      scheduleBounds.current = null;
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("transitionend", update);
+      cancelAnimationFrame(frame);
+      void browserSetVisible(false).catch(() => {});
+    };
   }, [hasPage, visible, syncBounds]);
 
   useEffect(() => {
@@ -100,10 +173,12 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       const rect = viewport.current?.getBoundingClientRect();
       if (!rect) return;
       setError(null); setLoading(true); setSelection(null); setAnnotating(false);
-      await browserNavigate(url, { x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+      const { bounds, device: emulation } = measureViewport(rect, device);
+      if (emulation) await browserNavigate(url, bounds, emulation);
+      else await browserNavigate(url, bounds);
       setAddress(url); setHasPage(true);
     } catch (reason) { setLoading(false); setError(reason instanceof Error ? reason.message : String(reason)); }
-  }, []);
+  }, [device]);
   const handledRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !navigationRequest || handledRequest.current === navigationRequest.id) return;
@@ -116,6 +191,34 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   const act = async (action: Parameters<typeof browserAction>[0]) => {
     try { setError(null); await browserAction(action); setAnnotating(action === "annotate"); }
     catch (reason) { setError(String(reason)); }
+  };
+
+  const resizeDevice = (width: number, height: number) => {
+    const size = { width: clampDimension(width), height: clampDimension(height) };
+    if (size.width !== deviceSettings.size.width || size.height !== deviceSettings.size.height) {
+      setDeviceSettings({ preset: RESPONSIVE, size });
+    }
+  };
+
+  const startResize = (event: PointerEvent<HTMLButtonElement>) => {
+    const rect = viewport.current?.getBoundingClientRect();
+    if (event.button !== 0 || !rect) return;
+    const { device: emulation } = measureViewport(rect, device);
+    if (!emulation || emulation.scale <= 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeStart.current = {
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      size: deviceSettings.size, scale: emulation.scale,
+    };
+  };
+
+  const dragResize = (event: PointerEvent<HTMLButtonElement>) => {
+    const start = resizeStart.current;
+    if (start?.pointerId !== event.pointerId) return;
+    resizeDevice(
+      start.size.width + (event.clientX - start.x) / start.scale,
+      start.size.height + (event.clientY - start.y) / start.scale,
+    );
   };
 
   const saveAnnotation = () => {
@@ -138,17 +241,66 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
         <button type="submit" className="secondary">Go</button>
       </form>
       <div className="browser-tools">
+        {runtime && <span className="browser-engine" aria-label="Browser engine" title={runtime.version || undefined}>{runtime.engine}</span>}
+        {chromiumControls && <>
+          <button
+            type="button"
+            className={`secondary${deviceEnabled ? " is-active" : ""}`}
+            aria-pressed={deviceEnabled}
+            onClick={() => setDeviceEnabled(!deviceEnabled)}
+          >
+            Device
+          </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!hasPage}
+            onClick={() => {
+              setError(null);
+              void browserAction("devtools").catch((reason) => setError(String(reason)));
+            }}
+          >
+            DevTools
+          </button>
+        </>}
         <button type="button" className={`secondary${annotating ? " is-active" : ""}`} disabled={!hasPage || loading} aria-pressed={annotating} onClick={() => void act(annotating ? "browse" : "annotate")}>{annotating ? "Cancel selection" : "Annotate"}</button>
         <span>{annotating ? "Click an element on the page. Esc cancels." : "Browse, select an element, then describe the change."}</span>
       </div>
-      <div className="browser-viewport" ref={viewport}>
+      {device && <BrowserDeviceControls settings={device} onChange={setDeviceSettings} />}
+      <div className={`browser-viewport${device ? " browser-viewport-device" : ""}`} ref={viewport}>
         {!hasPage && <div className="browser-empty"><strong>Your website, beside your chat</strong><p>Enter a live, staging, or local address above. Use Annotate to attach precise feedback to your conversation.</p></div>}
+        {responsive && hasPage && (
+          <button
+            ref={resizeGrip}
+            type="button"
+            className="ghost browser-resize-grip"
+            aria-label="Resize responsive viewport"
+            title="Drag to resize or use the arrow keys"
+            onPointerDown={startResize}
+            onPointerMove={dragResize}
+            onLostPointerCapture={() => { resizeStart.current = null; }}
+            onKeyDown={(event) => {
+              const step = event.shiftKey ? 50 : 10;
+              const { width, height } = deviceSettings.size;
+              switch (event.key) {
+                case "ArrowLeft": resizeDevice(width - step, height); break;
+                case "ArrowRight": resizeDevice(width + step, height); break;
+                case "ArrowUp": resizeDevice(width, height - step); break;
+                case "ArrowDown": resizeDevice(width, height + step); break;
+                default: return;
+              }
+              event.preventDefault();
+            }}
+          >
+            <MoveDiagonal size={13} aria-hidden />
+          </button>
+        )}
       </div>
       {error && <p className="browser-error" role="alert">{error}</p>}
       {selection && <div className="browser-selection">
         <div className="browser-selection-meta"><strong>{selection.selector || selection.tag}</strong><span>{capturing ? "Capturing screenshot…" : screenshot ? "Screenshot captured" : "Element selected"}</span></div>
         {selection.text && <p className="browser-selected-text">{selection.text}</p>}
-        <textarea aria-label="Annotation feedback" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="What should change here?" rows={2} maxLength={8000} />
+        <textarea ref={feedback} aria-label="Annotation feedback" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="What should change here?" rows={2} maxLength={8000} />
         <div className="browser-feedback-actions"><button type="button" className="secondary" disabled={!comment.trim() || capturing} onClick={saveAnnotation}>Save annotation</button><button type="button" className="ghost" onClick={() => setSelection(null)}>Discard</button></div>
       </div>}
       {annotations.length > 0 && <div className="browser-annotations">

@@ -163,12 +163,13 @@ This is required for settings, workspace metadata, app-server payload handling, 
 ## Embedded desktop browser
 
 - UI, annotation state and formatting: `src/features/browser/*`.
-- Native webview, navigation and macOS snapshots: `src-tauri/src/browser/*`.
+- Website navigation and snapshots: `src-tauri/src/browser/*`. Apple Silicon builds with `chromium-browser` use Chromium for website content and WKWebView for the app UI. Other builds use the system webview for both.
+- MRN Local Chromium packaging: `python3 scripts/build-mrn-local-chromium.py` uses the local Tauri configuration and Codex home. The packaged framework and sandboxed helpers must accompany the app. The build command produces a signed bundle in `src-tauri/target/debug/bundle/macos/`.
 - IPC wrappers and events: `src/services/tauri.ts`, `src/services/events.ts`.
 - Desktop split view: `src/features/layout/components/DesktopLayout.tsx`.
 - Browser web content has no Tauri capability grants; its bounded selection bridge only accepts an annotation after the user enables selection. Feedback is added to the composer draft by an explicit user action.
 - Browser commands run in the local desktop app, including when Codex uses a remote daemon. They intentionally have no daemon RPC equivalent.
-- The macOS webview retains its own website sessions. Browser extension hosting and verified 1Password autofill are not implemented.
+- Each browser engine keeps its own website sessions. Chromium stores encrypted cookies in its app-specific profile and uses a dedicated macOS Keychain entry. Browser extension hosting and verified 1Password autofill are unavailable.
 
 - Native window actions use `get_window("main")`; `get_webview_window("main")` stops matching after the embedded browser is added. Dock reopen, tray, and menu actions must work with multiple webviews.
 

@@ -41,6 +41,7 @@ skills-lock.json
 
 # MRN runtime profiles, credentials, local reports, and generated Python files
 /.mrn-local/
+/.browser-lab/
 /.env
 /.env.*
 !/.env.example

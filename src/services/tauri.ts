@@ -1250,10 +1250,11 @@ export async function sendNotification(
 }
 
 // Desktop browser controls are local UI commands, including in remote daemon mode.
-import type { BrowserAction, BrowserBounds } from "@/features/browser/browserTypes";
-export const browserNavigate = (url: string, bounds: BrowserBounds) => invoke<void>("browser_navigate", { url, bounds });
+import type { BrowserAction, BrowserBounds, BrowserDeviceViewport } from "@/features/browser/browserTypes";
+export const browserNavigate = (url: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_navigate", { url, bounds, device });
 export const browserGetUrl = () => invoke<string | null>("browser_get_url");
-export const browserSetBounds = (bounds: BrowserBounds) => invoke<void>("browser_set_bounds", { bounds });
+export const browserSetBounds = (bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_set_bounds", { bounds, device });
 export const browserSetVisible = (visible: boolean) => invoke<void>("browser_set_visible", { visible });
 export const browserAction = (action: BrowserAction) => invoke<void>("browser_action", { action });
 export const browserCapture = () => invoke<string>("browser_capture");
+export const browserRuntimeInfo = () => invoke<{ engine: string; version: string }>("browser_runtime_info");

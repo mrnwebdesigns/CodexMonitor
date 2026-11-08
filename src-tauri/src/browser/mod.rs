@@ -1,8 +1,14 @@
 //! Desktop-only browser UI. Remote pages receive no Tauri capability grants.
 //! The sole inbound page message is bounded annotation data, reviewed in the UI.
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl};
+#[cfg(not(chromium_browser))]
+use tauri::WebviewUrl;
+use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(chromium_browser)]
+pub(crate) mod chromium;
+
+#[cfg(not(chromium_browser))]
 const LABEL: &str = "workspace-browser";
 const SCRIPT: &str = include_str!("annotation.js");
 
@@ -17,6 +23,25 @@ pub struct BrowserBounds {
     y: f64,
     width: f64,
     height: f64,
+}
+
+#[cfg(chromium_browser)]
+#[derive(Clone, Copy, Deserialize, PartialEq)]
+pub struct BrowserDeviceViewport {
+    width: i32,
+    height: i32,
+    scale: f64,
+}
+
+#[cfg(chromium_browser)]
+fn valid_device(device: Option<BrowserDeviceViewport>) -> bool {
+    device.is_none_or(|device| {
+        (200..=2400).contains(&device.width)
+            && (200..=2400).contains(&device.height)
+            && device.scale.is_finite()
+            && device.scale > 0.0
+            && device.scale <= 1.0
+    })
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -101,6 +126,7 @@ fn page_event(app: &AppHandle, url: &tauri::Url, loading: bool, title: Option<St
     );
 }
 
+#[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_navigate(
     app: AppHandle,
@@ -175,6 +201,7 @@ pub async fn browser_navigate(
     Ok(())
 }
 
+#[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_get_url(
     app: AppHandle,
@@ -191,6 +218,7 @@ pub async fn browser_get_url(
         .transpose()
 }
 
+#[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_set_bounds(
     app: AppHandle,
@@ -212,6 +240,7 @@ pub async fn browser_set_bounds(
     Ok(())
 }
 
+#[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_set_visible(
     app: AppHandle,
@@ -235,6 +264,7 @@ pub async fn browser_set_visible(
     Ok(())
 }
 
+#[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_action(
     app: AppHandle,
@@ -260,7 +290,12 @@ pub async fn browser_action(
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(chromium_browser)]
+async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
+    chromium::capture(app).await
+}
+
+#[cfg(all(target_os = "macos", not(chromium_browser)))]
 async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
     use objc2::{msg_send, runtime::AnyObject};
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
@@ -315,6 +350,103 @@ pub async fn browser_capture(app: AppHandle, webview: tauri::Webview) -> Result<
         .await
         .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserRuntimeInfo {
+    engine: &'static str,
+    version: String,
+}
+
+#[tauri::command]
+pub async fn browser_runtime_info(webview: tauri::Webview) -> Result<BrowserRuntimeInfo, String> {
+    check_owner(&webview)?;
+    #[cfg(chromium_browser)]
+    return Ok(BrowserRuntimeInfo {
+        engine: "Chromium",
+        version: chromium::version(),
+    });
+    #[cfg(not(chromium_browser))]
+    Ok(BrowserRuntimeInfo {
+        engine: if cfg!(target_os = "macos") { "WebKit" } else { "System WebView" },
+        version: String::new(),
+    })
+}
+
+#[cfg(chromium_browser)]
+#[tauri::command]
+pub async fn browser_navigate(
+    app: AppHandle,
+    webview: tauri::Webview,
+    url: String,
+    bounds: BrowserBounds,
+    device: Option<BrowserDeviceViewport>,
+) -> Result<(), String> {
+    check_owner(&webview)?;
+    let url = parse_url(&url)?;
+    if !valid_bounds(&bounds) {
+        return Err("Invalid browser panel size".into());
+    }
+    if !valid_device(device) {
+        return Err("Invalid device viewport".into());
+    }
+    chromium::navigate(&app, url, bounds, device).await
+}
+
+#[cfg(chromium_browser)]
+#[tauri::command]
+pub async fn browser_get_url(
+    app: AppHandle,
+    webview: tauri::Webview,
+) -> Result<Option<String>, String> {
+    check_owner(&webview)?;
+    chromium::get_url(&app).await
+}
+
+#[cfg(chromium_browser)]
+#[tauri::command]
+pub async fn browser_set_bounds(
+    app: AppHandle,
+    webview: tauri::Webview,
+    bounds: BrowserBounds,
+    device: Option<BrowserDeviceViewport>,
+) -> Result<(), String> {
+    check_owner(&webview)?;
+    if !valid_bounds(&bounds) {
+        return Err("Invalid browser panel size".into());
+    }
+    if !valid_device(device) {
+        return Err("Invalid device viewport".into());
+    }
+    chromium::set_bounds(&app, bounds, device).await
+}
+
+#[cfg(chromium_browser)]
+#[tauri::command]
+pub async fn browser_set_visible(
+    app: AppHandle,
+    webview: tauri::Webview,
+    visible: bool,
+) -> Result<(), String> {
+    check_owner(&webview)?;
+    if !visible {
+        app.state::<BrowserState>()
+            .annotation_armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    chromium::set_visible(&app, visible).await
+}
+
+#[cfg(chromium_browser)]
+#[tauri::command]
+pub async fn browser_action(
+    app: AppHandle,
+    webview: tauri::Webview,
+    action: String,
+) -> Result<(), String> {
+    check_owner(&webview)?;
+    chromium::action(&app, action).await
 }
 
 #[cfg(test)]
