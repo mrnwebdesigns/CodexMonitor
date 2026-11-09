@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import MoveDiagonal from "lucide-react/dist/esm/icons/move-diagonal";
 import { PanelFrame, PanelHeader } from "@/features/design-system/components/panel/PanelPrimitives";
-import { browserAction, browserClose, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible } from "@services/tauri";
+import { browserAction, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible } from "@services/tauri";
 import { subscribeBrowserPage, subscribeBrowserSelection } from "@services/events";
 import type { BrowserAnnotation, BrowserSelection } from "../browserTypes";
 import { useBrowserCaptureDraft } from "../hooks/useBrowserCaptureDraft";
@@ -39,6 +39,7 @@ function measureViewport(rect: DOMRect, device: DeviceSettings | null) {
 
 export type BrowserPanelProps = {
   workspaceId: string;
+  threadId: string;
   navigationRequest?: { id: string; url: string } | null;
   onNavigationHandled?: (id: string) => void;
   annotations: BrowserAnnotation[];
@@ -50,7 +51,7 @@ export type BrowserPanelProps = {
   onClose: () => void;
 };
 
-export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandled, annotations, visible, canInsert, onAddAnnotation, onRemoveAnnotation, onInsert, onClose }: BrowserPanelProps) {
+export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavigationHandled, annotations, visible, canInsert, onAddAnnotation, onRemoveAnnotation, onInsert, onClose }: BrowserPanelProps) {
   const [address, setAddress] = useState("");
   const [restoreUrl, setRestoreUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState("Browser");
@@ -60,7 +61,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   const [selection, setSelection] = useState<BrowserSelection | null>(null);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const { screenshot, capturing, capture, discard, keep } = useBrowserCaptureDraft(setError);
+  const { screenshot, capturing, capture, discard, keep } = useBrowserCaptureDraft(threadId, setError);
   const [runtime, setRuntime] = useState<{ engine: string; version: string } | null>(null);
   const [deviceEnabled, setDeviceEnabled] = useState(false);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>({
@@ -78,7 +79,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   const feedback = useRef<HTMLTextAreaElement>(null);
   const navigationRequested = useRef(Boolean(navigationRequest));
   const pageUrl = useRef<string | null>(null);
-  const annotationWorkspace = useRef(workspaceId);
+  const annotationSession = useRef(`${workspaceId}:${threadId}`);
   const visibleRef = useRef(visible);
   const layoutRevision = useRef(0);
   visibleRef.current = visible;
@@ -87,18 +88,18 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     const revision = layoutRevision.current;
     const rect = viewport.current?.getBoundingClientRect();
     if (!rect || !visibleRef.current || rect.width < 80 || rect.height < 80) {
-      await browserSetVisible(false);
+      await browserSetVisible(threadId, false);
       return;
     }
     const { bounds, device: emulation } = measureViewport(rect, deviceRef.current);
     if (resizeGrip.current) {
       resizeGrip.current.style.transform = `translate(${bounds.width}px, ${bounds.height}px)`;
     }
-    if (emulation) await browserSetBounds(bounds, emulation);
-    else await browserSetBounds(bounds);
+    if (emulation) await browserSetBounds(threadId, bounds, emulation);
+    else await browserSetBounds(threadId, bounds);
     if (revision !== layoutRevision.current || !visibleRef.current) return;
-    await browserSetVisible(true);
-  }, []);
+    await browserSetVisible(threadId, true);
+  }, [threadId]);
 
   useLayoutEffect(() => {
     deviceRef.current = device;
@@ -110,21 +111,27 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   }, [selection]);
 
   useEffect(() => {
-    if (annotationWorkspace.current !== workspaceId) {
-      annotationWorkspace.current = workspaceId;
+    const sessionKey = `${workspaceId}:${threadId}`;
+    if (annotationSession.current !== sessionKey) {
+      annotationSession.current = sessionKey;
       discard();
       setSelection(null); setComment(""); setAnnotating(false);
-      void browserAction("browse").catch(() => {});
+      void browserAction(threadId, "browse").catch(() => {});
     }
-  }, [discard, workspaceId]);
+  }, [discard, threadId, workspaceId]);
 
   useEffect(() => {
     let live = true;
     void browserRuntimeInfo().then((value) => { if (live) setRuntime(value); }).catch(() => {});
-    void browserGetUrl().then((url) => {
+    navigationRequested.current = Boolean(navigationRequest);
+    pageUrl.current = null;
+    setHasPage(false);
+    setRestoreUrl(null);
+    void browserGetUrl(threadId).then((url) => {
       if (live && url && !navigationRequested.current) setRestoreUrl(url);
     }).catch(() => {});
     const unsubscribePage = subscribeBrowserPage((event) => {
+      if (event.threadId !== threadId) return;
       if (event.url !== pageUrl.current) {
         pageUrl.current = event.url;
         discard();
@@ -136,7 +143,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       setAnnotating(false);
     });
     const unsubscribeSelection = subscribeBrowserSelection((event) => {
-      if (!visibleRef.current) return;
+      if (event.threadId !== threadId || !visibleRef.current) return;
       setSelection(event); setComment(""); setAnnotating(false);
       capture();
     });
@@ -144,12 +151,12 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       live = false;
       unsubscribePage();
       unsubscribeSelection();
-      void browserClose().catch(() => {});
+      void browserSetVisible(threadId, false).catch(() => {});
     };
-  }, [capture, discard]);
+  }, [capture, discard, navigationRequest, threadId]);
 
   useEffect(() => {
-    if (!hasPage || !visible) { void browserSetVisible(false).catch(() => {}); return; }
+    if (!hasPage || !visible) { void browserSetVisible(threadId, false).catch(() => {}); return; }
     let frame = 0;
     const update = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => { void syncBounds().catch((reason) => setError(String(reason))); }); };
     scheduleBounds.current = update;
@@ -165,9 +172,9 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       window.removeEventListener("resize", update);
       window.removeEventListener("transitionend", update);
       cancelAnimationFrame(frame);
-      void browserSetVisible(false).catch(() => {});
+      void browserSetVisible(threadId, false).catch(() => {});
     };
-  }, [hasPage, visible, syncBounds]);
+  }, [hasPage, visible, syncBounds, threadId]);
 
   useEffect(() => {
     if (!loading) return;
@@ -184,11 +191,11 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       discard();
       setError(null); setLoading(true); setSelection(null); setAnnotating(false);
       const { bounds, device: emulation } = measureViewport(rect, device);
-      if (emulation) await browserNavigate(url, bounds, emulation);
-      else await browserNavigate(url, bounds);
+      if (emulation) await browserNavigate(threadId, url, bounds, emulation);
+      else await browserNavigate(threadId, url, bounds);
       setAddress(url); setHasPage(true);
     } catch (reason) { setLoading(false); setError(reason instanceof Error ? reason.message : String(reason)); }
-  }, [device, discard]);
+  }, [device, discard, threadId]);
   const handledRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !navigationRequest || handledRequest.current === navigationRequest.id) return;
@@ -203,8 +210,8 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     void navigateTo(restoreUrl);
   }, [navigateTo, restoreUrl, visible]);
 
-  const act = async (action: Parameters<typeof browserAction>[0]) => {
-    try { setError(null); await browserAction(action); setAnnotating(action === "annotate"); }
+  const act = async (action: Parameters<typeof browserAction>[1]) => {
+    try { setError(null); await browserAction(threadId, action); setAnnotating(action === "annotate"); }
     catch (reason) { setError(String(reason)); }
   };
 
@@ -273,7 +280,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
             disabled={!hasPage}
             onClick={() => {
               setError(null);
-              void browserAction("devtools").catch((reason) => setError(String(reason)));
+              void browserAction(threadId, "devtools").catch((reason) => setError(String(reason)));
             }}
           >
             DevTools

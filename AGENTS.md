@@ -51,6 +51,13 @@ If you add a backend command, update all relevant layers and tests.
 - Keep Tauri calls in `src/services/tauri.ts` only.
 - Keep event subscription fanout in `src/services/events.ts`.
 
+## Internal Browser Routing
+
+- “Internal browser,” “in-app browser,” “open in Codex,” and similar wording mean the visible browser pane owned by the current stable Codex thread ID.
+- Authenticated browser UI work defaults to the current thread's `internal_browser` tools and visible pane. Never launch personal Chrome or substitute a generic `chrome-devtools-mcp` session unless the user explicitly requests an external browser.
+- The visible pane and agent tools must resolve to the same thread-isolated tabs, cookies, persistent profile, and browser ownership. Test identity on a harmless local page before requesting a production login.
+- Browser session commands and events must carry the stable Codex thread ID. Do not key profiles or ownership by turn ID, workspace ID, or a global browser profile.
+
 ## Import Aliases
 
 Use project aliases for frontend imports:

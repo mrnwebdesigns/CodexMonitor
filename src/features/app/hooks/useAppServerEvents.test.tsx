@@ -6,9 +6,16 @@ import type { AppServerEvent } from "../../../types";
 import { subscribeAppServerEvents } from "../../../services/events";
 import { useAppServerEvents } from "./useAppServerEvents";
 
+const native = vi.hoisted(() => ({
+  browserClose: vi.fn(),
+  browserToolCall: vi.fn(),
+  respondToDynamicToolCall: vi.fn(),
+}));
+
 vi.mock("../../../services/events", () => ({
   subscribeAppServerEvents: vi.fn(),
 }));
+vi.mock("../../../services/tauri", () => native);
 
 type Handlers = Parameters<typeof useAppServerEvents>[0];
 
@@ -18,13 +25,17 @@ function TestHarness({ handlers }: { handlers: Handlers }) {
 }
 
 let listener: ((event: AppServerEvent) => void) | null = null;
+let listeners: Array<(event: AppServerEvent) => void> = [];
 const unlisten = vi.fn();
 
 beforeEach(() => {
   listener = null;
+  listeners = [];
   unlisten.mockReset();
+  native.browserClose.mockResolvedValue(undefined);
   vi.mocked(subscribeAppServerEvents).mockImplementation((cb) => {
     listener = cb;
+    listeners.push(cb);
     return unlisten;
   });
 });
@@ -43,6 +54,109 @@ async function mount(handlers: Handlers) {
 }
 
 describe("useAppServerEvents", () => {
+  it("releases one archived thread browser once across multiple subscribers", async () => {
+    native.browserClose.mockResolvedValueOnce(undefined);
+    const first = await mount({});
+    const second = await mount({});
+    const event: AppServerEvent = {
+      workspace_id: "ws-1",
+      message: {
+        method: "thread/archived",
+        params: { threadId: "thread-one" },
+      },
+    };
+
+    await act(async () => {
+      listeners.forEach((subscriber) => subscriber(event));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(native.browserClose).toHaveBeenCalledTimes(1);
+    expect(native.browserClose).toHaveBeenCalledWith("thread-one");
+    await act(async () => {
+      first.root.unmount();
+      second.root.unmount();
+    });
+  });
+
+  it("executes one internal browser request once across multiple subscribers", async () => {
+    let finishToolCall: ((value: Array<{ type: string; text: string }>) => void) | null = null;
+    native.browserToolCall.mockImplementationOnce(() => new Promise((resolve) => {
+      finishToolCall = resolve;
+    }));
+    native.respondToDynamicToolCall.mockResolvedValueOnce(undefined);
+    const first = await mount({});
+    const second = await mount({});
+    const event: AppServerEvent = {
+      workspace_id: "ws-1",
+      message: {
+        id: 92,
+        method: "item/tool/call",
+        params: {
+          namespace: "internal_browser",
+          threadId: "thread-one",
+          tool: "click",
+          arguments: { selector: "#continue" },
+        },
+      },
+    };
+
+    await act(async () => {
+      listeners.forEach((subscriber) => subscriber(event));
+      await Promise.resolve();
+    });
+
+    expect(native.browserToolCall).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishToolCall?.([{ type: "inputText", text: "ok" }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(native.respondToDynamicToolCall).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      first.root.unmount();
+      second.root.unmount();
+    });
+  });
+
+  it("routes an internal browser tool call by stable thread ID and does not expose secret arguments to generic event handlers", async () => {
+    native.browserToolCall.mockResolvedValueOnce([{ type: "inputText", text: "ok" }]);
+    native.respondToDynamicToolCall.mockResolvedValueOnce(undefined);
+    const handlers: Handlers = { onAppServerEvent: vi.fn() };
+    const { root } = await mount(handlers);
+
+    await act(async () => {
+      listener?.({
+        workspace_id: "ws-1",
+        message: {
+          id: 91,
+          method: "item/tool/call",
+          params: {
+            namespace: "internal_browser",
+            threadId: "thread-one",
+            turnId: "turn-two",
+            tool: "fill",
+            arguments: { selector: "#password", value: "not-for-logs" },
+          },
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(native.browserToolCall).toHaveBeenCalledWith("thread-one", "fill", {
+      selector: "#password",
+      value: "not-for-logs",
+    });
+    expect(native.respondToDynamicToolCall).toHaveBeenCalledWith("ws-1", 91, {
+      success: true,
+      contentItems: [{ type: "inputText", text: "ok" }],
+    });
+    expect(handlers.onAppServerEvent).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
   it("routes app-server events to handlers", async () => {
     const handlers: Handlers = {
       onAppServerEvent: vi.fn(),

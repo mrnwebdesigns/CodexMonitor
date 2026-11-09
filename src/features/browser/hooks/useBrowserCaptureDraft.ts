@@ -5,7 +5,7 @@ function releaseCapture(path: string) {
   void browserFinishCapture(path, false).catch(() => {});
 }
 
-export function useBrowserCaptureDraft(onError: (message: string) => void) {
+export function useBrowserCaptureDraft(threadId: string, onError: (message: string) => void) {
   const current = useRef<{ path: string | null } | null>(null);
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
@@ -29,7 +29,7 @@ export function useBrowserCaptureDraft(onError: (message: string) => void) {
     const draft = { path: null as string | null };
     current.current = draft;
     setCapturing(true);
-    void browserCapture().then((path) => {
+    void browserCapture(threadId).then((path) => {
       if (current.current !== draft) {
         releaseCapture(path);
         return;
@@ -43,7 +43,7 @@ export function useBrowserCaptureDraft(onError: (message: string) => void) {
     }).finally(() => {
       if (current.current === draft) setCapturing(false);
     });
-  }, [discard, onError]);
+  }, [discard, onError, threadId]);
 
   const keep = async () => {
     const path = current.current?.path;

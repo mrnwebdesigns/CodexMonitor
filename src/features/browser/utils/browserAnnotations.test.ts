@@ -14,7 +14,7 @@ describe("browser addresses", () => {
 
 describe("annotation context", () => {
   it("preserves element, page and owner feedback as reviewable draft text", () => {
-    const text = formatBrowserAnnotations([{ id: "1", url: "https://example.com/", title: "Example", selector: "#hero", tag: "section", text: "Hello <script>", rect: { x: 1, y: 2, width: 300, height: 100 }, comment: "Make the heading smaller", screenshot: "/tmp/capture.png" }]);
+    const text = formatBrowserAnnotations([{ id: "1", threadId: "thread-one", url: "https://example.com/", title: "Example", selector: "#hero", tag: "section", text: "Hello <script>", rect: { x: 1, y: 2, width: 300, height: 100 }, comment: "Make the heading smaller", screenshot: "/tmp/capture.png" }]);
     expect(text).toContain("URL: https://example.com/");
     expect(text).toContain("Element: #hero");
     expect(text).toContain('Visible text: "Hello <script>"');
