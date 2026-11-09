@@ -1112,10 +1112,24 @@ mod tests {
         let tools = internal_browser_dynamic_tools();
         let namespace = tools.as_array().and_then(|items| items.first()).unwrap();
         assert_eq!(namespace.get("name"), Some(&json!("internal_browser")));
-        let names = namespace["tools"].as_array().unwrap().iter()
+        let names = namespace["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
             .filter_map(|tool| tool.get("name").and_then(Value::as_str))
             .collect::<Vec<_>>();
-        assert_eq!(names, vec!["open", "tabs", "snapshot", "click", "fill", "evaluate", "screenshot"]);
+        assert_eq!(
+            names,
+            vec![
+                "open",
+                "tabs",
+                "snapshot",
+                "click",
+                "fill",
+                "evaluate",
+                "screenshot"
+            ]
+        );
         for tool in namespace["tools"].as_array().unwrap() {
             assert!(tool["inputSchema"]["properties"].get("profile").is_none());
             assert!(tool["inputSchema"]["properties"].get("turnId").is_none());

@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 #[cfg(not(chromium_browser))]
+use tauri::Emitter;
+#[cfg(not(chromium_browser))]
 use tauri::WebviewUrl;
 use tauri::{AppHandle, Manager};
-#[cfg(not(chromium_browser))]
-use tauri::Emitter;
 
 #[cfg(any(chromium_browser, test))]
 pub(crate) mod session;
@@ -126,7 +126,13 @@ fn check_owner(webview: &tauri::Webview) -> Result<(), String> {
 }
 
 #[cfg(not(chromium_browser))]
-fn page_event(app: &AppHandle, thread_id: &str, url: &tauri::Url, loading: bool, title: Option<String>) {
+fn page_event(
+    app: &AppHandle,
+    thread_id: &str,
+    url: &tauri::Url,
+    loading: bool,
+    title: Option<String>,
+) {
     let _ = app.emit_to(
         "main",
         "browser-page",
@@ -257,7 +263,10 @@ pub async fn browser_close(
         let Some(browser) = app.get_webview(LABEL) else {
             return Ok(None);
         };
-        let url = browser.url().ok().and_then(|url| parse_url(url.as_str()).ok());
+        let url = browser
+            .url()
+            .ok()
+            .and_then(|url| parse_url(url.as_str()).ok());
         browser.close().map_err(|error| error.to_string())?;
         Ok(url.map(|url| url.to_string()))
     }
@@ -382,7 +391,11 @@ async fn capture(_app: &AppHandle, _thread_id: String) -> Result<Vec<u8>, String
 }
 
 #[tauri::command]
-pub async fn browser_capture(app: AppHandle, webview: tauri::Webview, thread_id: String) -> Result<String, String> {
+pub async fn browser_capture(
+    app: AppHandle,
+    webview: tauri::Webview,
+    thread_id: String,
+) -> Result<String, String> {
     check_owner(&webview)?;
     let png = capture(&app, thread_id).await?;
     let directory = capture_directory(&app)?.join("pending");
@@ -447,7 +460,10 @@ pub async fn reap_pending_captures(app: AppHandle) {
     };
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path();
-        let is_stale = entry.metadata().await.ok()
+        let is_stale = entry
+            .metadata()
+            .await
+            .ok()
             .and_then(|metadata| metadata.modified().ok())
             .and_then(|modified| modified.elapsed().ok())
             .is_some_and(|age| age.as_secs() >= 24 * 60 * 60);
@@ -474,7 +490,11 @@ pub async fn browser_runtime_info(webview: tauri::Webview) -> Result<BrowserRunt
     });
     #[cfg(not(chromium_browser))]
     Ok(BrowserRuntimeInfo {
-        engine: if cfg!(target_os = "macos") { "WebKit" } else { "System WebView" },
+        engine: if cfg!(target_os = "macos") {
+            "WebKit"
+        } else {
+            "System WebView"
+        },
         version: String::new(),
     })
 }
@@ -577,9 +597,15 @@ pub async fn browser_find(
     #[cfg(not(chromium_browser))]
     {
         let _ = (thread_id, find_next);
-        let Some(browser) = app.get_webview(LABEL) else { return Ok(()); };
+        let Some(browser) = app.get_webview(LABEL) else {
+            return Ok(());
+        };
         let query = serde_json::to_string(&query).map_err(|error| error.to_string())?;
-        browser.eval(format!("window.find({query}, false, {}, true, false, true, false)", !forward))
+        browser
+            .eval(format!(
+                "window.find({query}, false, {}, true, false, true, false)",
+                !forward
+            ))
             .map_err(|error| error.to_string())
     }
 }
@@ -597,7 +623,8 @@ pub async fn browser_stop_find(
     {
         let _ = thread_id;
         if let Some(browser) = app.get_webview(LABEL) {
-            browser.eval("window.getSelection()?.removeAllRanges()")
+            browser
+                .eval("window.getSelection()?.removeAllRanges()")
                 .map_err(|error| error.to_string())?;
             browser.set_focus().map_err(|error| error.to_string())?;
         }
@@ -630,7 +657,10 @@ mod tests {
     fn capture_finalization_is_limited_to_app_staged_pngs() {
         let directory = Path::new("/app/browser-captures/pending");
         let name = "f744e8fa-a1e6-42d1-ad7b-1dc58f024470.png";
-        assert_eq!(pending_capture_name(directory, &directory.join(name)), Some(name));
+        assert_eq!(
+            pending_capture_name(directory, &directory.join(name)),
+            Some(name)
+        );
         assert!(pending_capture_name(directory, &directory.parent().unwrap().join(name)).is_none());
         assert!(pending_capture_name(directory, &directory.join("not-a-capture.png")).is_none());
         assert!(pending_capture_name(directory, &directory.join("nested").join(name)).is_none());

@@ -83,7 +83,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   const findInput = useRef<HTMLInputElement>(null);
   const navigationRequested = useRef(Boolean(navigationRequest));
   const pageUrl = useRef<string | null>(null);
-  const annotationWorkspace = useRef(workspaceId);
+  const annotationSession = useRef(`${workspaceId}:${threadId}`);
   const visibleRef = useRef(visible);
   const layoutRevision = useRef(0);
   visibleRef.current = visible;
@@ -156,13 +156,14 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   useEffect(() => () => { void browserStopFind(threadId).catch(() => {}); }, [threadId]);
 
   useEffect(() => {
-    if (annotationWorkspace.current !== workspaceId) {
-      annotationWorkspace.current = workspaceId;
+    const sessionKey = `${workspaceId}:${threadId}`;
+    if (annotationSession.current !== sessionKey) {
+      annotationSession.current = sessionKey;
       discard();
       setSelection(null); setComment(""); setAnnotating(false);
       void browserAction(threadId, "browse").catch(() => {});
     }
-  }, [discard, workspaceId]);
+  }, [discard, threadId, workspaceId]);
 
   useEffect(() => {
     let live = true;

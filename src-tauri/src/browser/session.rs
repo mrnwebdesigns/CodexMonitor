@@ -49,7 +49,11 @@ fn try_lock_file(file: &File) -> std::io::Result<()> {
     use std::os::fd::AsRawFd;
 
     let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-    if result == 0 { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }
 
 #[cfg(unix)]
@@ -61,7 +65,10 @@ fn unlock_file(file: &File) {
 
 #[cfg(not(unix))]
 fn try_lock_file(_file: &File) -> std::io::Result<()> {
-    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "browser profile locking requires Unix"))
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "browser profile locking requires Unix",
+    ))
 }
 
 #[cfg(not(unix))]
@@ -119,7 +126,8 @@ pub(crate) fn claim_ownership(profile: &Path, thread_id: &str) -> Result<Ownersh
         .open(&path)
         .map_err(|error| error.to_string())?;
     if let Err(error) = try_lock_file(&file) {
-        let existing = std::fs::read(&path).ok()
+        let existing = std::fs::read(&path)
+            .ok()
             .and_then(|bytes| serde_json::from_slice::<BrowserOwnerRecord>(&bytes).ok());
         return Err(match existing {
             Some(owner) => format!(
@@ -129,7 +137,8 @@ pub(crate) fn claim_ownership(profile: &Path, thread_id: &str) -> Result<Ownersh
             None => format!("Internal browser profile ownership lock is busy: {error}"),
         });
     }
-    let existing = std::fs::read(&path).ok()
+    let existing = std::fs::read(&path)
+        .ok()
         .and_then(|bytes| serde_json::from_slice::<BrowserOwnerRecord>(&bytes).ok());
     let decision = match existing {
         Some(_) => OwnershipDecision::RecoveredStale,
@@ -146,14 +155,21 @@ pub(crate) fn claim_ownership(profile: &Path, thread_id: &str) -> Result<Ownersh
     file.write_all(&serde_json::to_vec(&owner).map_err(|error| error.to_string())?)
         .map_err(|error| error.to_string())?;
     file.sync_data().map_err(|error| error.to_string())?;
-    Ok(OwnershipClaim { decision, file, path })
+    Ok(OwnershipClaim {
+        decision,
+        file,
+        path,
+    })
 }
 
 pub(crate) fn release_ownership(claim: OwnershipClaim) {
     drop(claim);
 }
 
-pub(crate) fn new_record(thread_id: &str, url: Option<String>) -> Result<BrowserSessionRecord, String> {
+pub(crate) fn new_record(
+    thread_id: &str,
+    url: Option<String>,
+) -> Result<BrowserSessionRecord, String> {
     let thread_id = validate_thread_id(thread_id)?.to_string();
     Ok(BrowserSessionRecord {
         version: SESSION_VERSION,
@@ -163,7 +179,10 @@ pub(crate) fn new_record(thread_id: &str, url: Option<String>) -> Result<Browser
     })
 }
 
-pub(crate) fn read_record(profile: &Path, expected_thread_id: &str) -> Option<BrowserSessionRecord> {
+pub(crate) fn read_record(
+    profile: &Path,
+    expected_thread_id: &str,
+) -> Option<BrowserSessionRecord> {
     let bytes = std::fs::read(record_path(profile)).ok()?;
     let record: BrowserSessionRecord = serde_json::from_slice(&bytes).ok()?;
     let expected_session_id = session_id(expected_thread_id).ok()?;
@@ -216,7 +235,11 @@ mod tests {
         assert_eq!(first.decision, OwnershipDecision::Claimed);
         assert!(claim_ownership(&profile, "thread-one").is_err());
         release_ownership(first);
-        std::fs::write(ownership_path(&profile), br#"{"version":1,"threadId":"old","sessionId":"old","pid":999999}"#).unwrap();
+        std::fs::write(
+            ownership_path(&profile),
+            br#"{"version":1,"threadId":"old","sessionId":"old","pid":999999}"#,
+        )
+        .unwrap();
         let recovered = claim_ownership(&profile, "thread-one").unwrap();
         assert_eq!(recovered.decision, OwnershipDecision::RecoveredStale);
         release_ownership(recovered);

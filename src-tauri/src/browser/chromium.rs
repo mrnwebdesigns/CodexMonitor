@@ -343,11 +343,17 @@ fn create_session(
         closed,
         closing: false,
     };
-    log_session("session_open", &browser_session, match ownership_decision {
-        session::OwnershipDecision::Claimed => "new-session",
-        session::OwnershipDecision::RecoveredStale => "stale-recovery",
-    });
-    engine.sessions.insert(thread_id.to_string(), browser_session);
+    log_session(
+        "session_open",
+        &browser_session,
+        match ownership_decision {
+            session::OwnershipDecision::Claimed => "new-session",
+            session::OwnershipDecision::RecoveredStale => "stale-recovery",
+        },
+    );
+    engine
+        .sessions
+        .insert(thread_id.to_string(), browser_session);
     Ok(())
 }
 
@@ -367,7 +373,10 @@ fn ensure_session(
         return Ok(());
     }
     let profile = session::profile_dir(
-        engine.root_cache_path.as_ref().ok_or("Chromium profile root is unavailable")?,
+        engine
+            .root_cache_path
+            .as_ref()
+            .ok_or("Chromium profile root is unavailable")?,
         thread_id,
     )?;
     let restored = session::read_record(&profile, thread_id).and_then(|record| record.url);
@@ -392,9 +401,15 @@ pub async fn navigate(
             disarm(app);
             ensure_session(app, &mut engine, &thread_id, Some(url.as_str()), &bounds)?;
             hide_other_sessions(&mut engine, &thread_id)?;
-            let browser_session = engine.sessions.get_mut(&thread_id).ok_or("Browser session is unavailable")?;
+            let browser_session = engine
+                .sessions
+                .get_mut(&thread_id)
+                .ok_or("Browser session is unavailable")?;
             update_viewport(app, browser_session, &bounds, device)?;
-            browser_session.browser.main_frame().ok_or("Chromium page is unavailable")?
+            browser_session
+                .browser
+                .main_frame()
+                .ok_or("Chromium page is unavailable")?
                 .load_url(Some(&CefString::from(url.as_str())));
             macos::set_visible(&browser_session.browser, true)
         })
@@ -410,7 +425,13 @@ pub async fn get_url(app: &AppHandle, thread_id: String) -> Result<Option<String
             if let Some(browser_session) = engine.sessions.get(&thread_id) {
                 return Ok(current_url(&browser_session.browser));
             }
-            let profile = session::profile_dir(engine.root_cache_path.as_ref().ok_or("Chromium profile root is unavailable")?, &thread_id)?;
+            let profile = session::profile_dir(
+                engine
+                    .root_cache_path
+                    .as_ref()
+                    .ok_or("Chromium profile root is unavailable")?,
+                &thread_id,
+            )?;
             Ok(session::read_record(&profile, &thread_id).and_then(|record| record.url))
         })
     })
@@ -426,7 +447,9 @@ pub async fn set_bounds(
     on_main(app, move |app| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
-            let Some(browser_session) = engine.sessions.get_mut(&thread_id) else { return Ok(()); };
+            let Some(browser_session) = engine.sessions.get_mut(&thread_id) else {
+                return Ok(());
+            };
             update_viewport(app, browser_session, &bounds, device)
         })
     })
@@ -582,17 +605,28 @@ pub async fn find(
     on_main(app, move |_| {
         ENGINE.with(|cell| {
             let engine = cell.borrow();
-            let browser_session = engine.sessions.get(&thread_id)
+            let browser_session = engine
+                .sessions
+                .get(&thread_id)
                 .ok_or("Open a website in this thread's internal browser first")?;
-            let host = browser_session.browser.host().ok_or("Chromium page is unavailable")?;
+            let host = browser_session
+                .browser
+                .host()
+                .ok_or("Chromium page is unavailable")?;
             if query.is_empty() {
                 host.stop_finding(1);
             } else {
-                host.find(Some(&CefString::from(query.as_str())), forward as i32, 0, find_next as i32);
+                host.find(
+                    Some(&CefString::from(query.as_str())),
+                    forward as i32,
+                    0,
+                    find_next as i32,
+                );
             }
             Ok(())
         })
-    }).await
+    })
+    .await
 }
 
 pub async fn stop_find(app: &AppHandle, thread_id: String) -> Result<(), String> {
@@ -607,7 +641,8 @@ pub async fn stop_find(app: &AppHandle, thread_id: String) -> Result<(), String>
             }
             Ok(())
         })
-    }).await
+    })
+    .await
 }
 
 async fn execute_devtools_method(
@@ -622,7 +657,9 @@ async fn execute_devtools_method(
     on_main(app, move |_| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
-            let browser_session = engine.sessions.get_mut(&request_thread_id)
+            let browser_session = engine
+                .sessions
+                .get_mut(&request_thread_id)
                 .ok_or("Open a website in this thread's internal browser first")?;
             let browser = browser_session.browser.clone();
             if browser_session.observer.is_none() {
@@ -656,7 +693,11 @@ async fn execute_devtools_method(
             let sent = browser
                 .host()
                 .ok_or("Chromium page is unavailable")?
-                .execute_dev_tools_method(id, Some(&CefString::from(method.as_str())), cef_parameters.as_mut());
+                .execute_dev_tools_method(
+                    id,
+                    Some(&CefString::from(method.as_str())),
+                    cef_parameters.as_mut(),
+                );
             if sent == 0 {
                 if let Ok(mut pending) = browser_session.pending.lock() {
                     pending.remove(&id);
@@ -672,14 +713,17 @@ async fn execute_devtools_method(
         let _ = on_main(app, move |_| {
             ENGINE.with(|cell| {
                 if let Some(browser_session) = cell.borrow().sessions.get(&thread_id) {
-                    if let Ok(mut pending) = browser_session.pending.lock() { pending.remove(&id); }
+                    if let Ok(mut pending) = browser_session.pending.lock() {
+                        pending.remove(&id);
+                    }
                 }
             });
             Ok(())
         })
         .await;
     }
-    result.map_err(|_| "Browser tool call timed out")?
+    result
+        .map_err(|_| "Browser tool call timed out")?
         .map_err(|_| "Browser tool call was cancelled")?
 }
 
@@ -689,7 +733,8 @@ pub async fn capture(app: &AppHandle, thread_id: String) -> Result<Vec<u8>, Stri
         thread_id,
         "Page.captureScreenshot".into(),
         Some(serde_json::json!({"format":"png","captureBeyondViewport":false})),
-    ).await?;
+    )
+    .await?;
     let data = payload
         .get("data")
         .and_then(Value::as_str)
@@ -707,19 +752,44 @@ pub async fn capture(app: &AppHandle, thread_id: String) -> Result<Vec<u8>, Stri
 }
 
 async fn ensure_tool_session(app: &AppHandle, thread_id: String) -> Result<(), String> {
+    let activated_thread_id = thread_id.clone();
     on_main(app, move |app| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
             initialize(app, &mut engine)?;
-            let bounds = BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
-            ensure_session(app, &mut engine, &thread_id, None, &bounds)
+            let bounds = BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            };
+            ensure_session(app, &mut engine, &thread_id, None, &bounds)?;
+            hide_other_sessions(&mut engine, &thread_id)?;
+            let browser_session = engine
+                .sessions
+                .get(&thread_id)
+                .ok_or("Open a website in this thread's internal browser first")?;
+            macos::set_visible(&browser_session.browser, true)
         })
-    }).await
+    })
+    .await?;
+    let _ = app.emit_to(
+        "main",
+        "browser-session-activated",
+        serde_json::json!({"threadId": activated_thread_id}),
+    );
+    Ok(())
 }
 
 fn runtime_value(payload: Value) -> Result<Value, String> {
     if let Some(exception) = payload.get("exceptionDetails") {
-        return Err(format!("Page JavaScript failed: {}", exception.get("text").and_then(Value::as_str).unwrap_or("unknown error")));
+        return Err(format!(
+            "Page JavaScript failed: {}",
+            exception
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+        ));
     }
     Ok(payload
         .get("result")
@@ -740,7 +810,8 @@ async fn evaluate(app: &AppHandle, thread_id: String, expression: String) -> Res
             "awaitPromise": true,
             "userGesture": true
         })),
-    ).await?;
+    )
+    .await?;
     runtime_value(payload)
 }
 
@@ -751,24 +822,42 @@ pub async fn tool_call(
     arguments: Value,
 ) -> Result<Vec<Value>, String> {
     session::validate_thread_id(&thread_id)?;
-    eprintln!("{}", serde_json::json!({
-        "component": "internal_browser", "event": "tool_call",
-        "threadId": thread_id, "tool": tool,
-        "argumentsLogged": false
-    }));
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "component": "internal_browser", "event": "tool_call",
+            "threadId": thread_id, "tool": tool,
+            "argumentsLogged": false
+        })
+    );
     match tool.as_str() {
         "open" => {
-            let url = arguments.get("url").and_then(Value::as_str).ok_or("url is required")?;
+            let url = arguments
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or("url is required")?;
             let url = parse_url(url)?;
             navigate(
                 app,
                 thread_id.clone(),
                 url,
-                BrowserBounds { x: 0.0, y: 0.0, width: 800.0, height: 600.0 },
+                BrowserBounds {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 800.0,
+                    height: 600.0,
+                },
                 None,
-            ).await?;
-            let _ = app.emit_to("main", "browser-session-activated", serde_json::json!({"threadId":thread_id}));
-            Ok(vec![serde_json::json!({"type":"input_text","text":"Opened in this thread's visible internal browser."})])
+            )
+            .await?;
+            let _ = app.emit_to(
+                "main",
+                "browser-session-activated",
+                serde_json::json!({"threadId":thread_id}),
+            );
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Opened in this thread's visible internal browser."}),
+            ])
         }
         "tabs" => {
             let result = on_main(app, move |app| {
@@ -796,7 +885,9 @@ pub async fn tool_call(
                     }]))
                 })
             }).await?;
-            Ok(vec![serde_json::json!({"type":"input_text","text":result.to_string()})])
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":result.to_string()}),
+            ])
         }
         "snapshot" => {
             let expression = r#"(() => {
@@ -820,34 +911,56 @@ pub async fn tool_call(
               })) };
             })()"#;
             let value = evaluate(app, thread_id, expression.into()).await?;
-            Ok(vec![serde_json::json!({"type":"input_text","text":value.to_string()})])
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":value.to_string()}),
+            ])
         }
         "click" => {
-            let selector = arguments.get("selector").and_then(Value::as_str).ok_or("selector is required")?;
+            let selector = arguments
+                .get("selector")
+                .and_then(Value::as_str)
+                .ok_or("selector is required")?;
             let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
             let expression = format!("(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('Element not found'); el.scrollIntoView({{block:'center'}}); el.click(); return true; }})()");
             evaluate(app, thread_id, expression).await?;
-            Ok(vec![serde_json::json!({"type":"input_text","text":"Clicked the element."})])
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Clicked the element."}),
+            ])
         }
         "fill" => {
-            let selector = arguments.get("selector").and_then(Value::as_str).ok_or("selector is required")?;
-            let value = arguments.get("value").and_then(Value::as_str).ok_or("value is required")?;
+            let selector = arguments
+                .get("selector")
+                .and_then(Value::as_str)
+                .ok_or("selector is required")?;
+            let value = arguments
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or("value is required")?;
             let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
             let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
             let expression = format!("(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('Element not found'); el.focus(); const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set; if (setter) setter.call(el, {value}); else el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()");
             evaluate(app, thread_id, expression).await?;
-            Ok(vec![serde_json::json!({"type":"input_text","text":"Filled the element. The value was not logged or returned."})])
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Filled the element. The value was not logged or returned."}),
+            ])
         }
         "evaluate" => {
-            let expression = arguments.get("expression").and_then(Value::as_str).ok_or("expression is required")?;
+            let expression = arguments
+                .get("expression")
+                .and_then(Value::as_str)
+                .ok_or("expression is required")?;
             let value = evaluate(app, thread_id, expression.to_string()).await?;
-            Ok(vec![serde_json::json!({"type":"input_text","text":value.to_string()})])
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":value.to_string()}),
+            ])
         }
         "screenshot" => {
             ensure_tool_session(app, thread_id.clone()).await?;
             let png = capture(app, thread_id).await?;
             let encoded = base64::engine::general_purpose::STANDARD.encode(png);
-            Ok(vec![serde_json::json!({"type":"input_image","image_url":format!("data:image/png;base64,{encoded}")})])
+            Ok(vec![
+                serde_json::json!({"type":"inputImage","imageUrl":format!("data:image/png;base64,{encoded}")}),
+            ])
         }
         _ => Err("Unknown internal browser tool".into()),
     }
@@ -858,10 +971,18 @@ pub fn shutdown() {
     let (sessions, initialized) = ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
         let initialized = engine.initialized;
-        let sessions = engine.sessions.drain().map(|(_, mut browser_session)| {
-            let browser = prepare_session_close(&mut browser_session);
-            (browser, browser_session.closed, browser_session.ownership.take())
-        }).collect::<Vec<_>>();
+        let sessions = engine
+            .sessions
+            .drain()
+            .map(|(_, mut browser_session)| {
+                let browser = prepare_session_close(&mut browser_session);
+                (
+                    browser,
+                    browser_session.closed,
+                    browser_session.ownership.take(),
+                )
+            })
+            .collect::<Vec<_>>();
         (sessions, initialized)
     });
     if !initialized {
@@ -877,11 +998,17 @@ pub fn shutdown() {
         let _ = request_browser_close(browser);
     }
     let deadline = Instant::now() + Duration::from_secs(3);
-    while sessions.iter().any(|(_, closed, _)| !closed.load(Ordering::SeqCst)) && Instant::now() < deadline {
+    while sessions
+        .iter()
+        .any(|(_, closed, _)| !closed.load(Ordering::SeqCst))
+        && Instant::now() < deadline
+    {
         objc2::rc::autoreleasepool(|_| cef::do_message_loop_work());
     }
     for (_, _, ownership) in sessions {
-        if let Some(ownership) = ownership { session::release_ownership(ownership); }
+        if let Some(ownership) = ownership {
+            session::release_ownership(ownership);
+        }
     }
     ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
