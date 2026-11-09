@@ -1251,10 +1251,27 @@ export async function sendNotification(
 
 // Desktop browser controls are local UI commands, including in remote daemon mode.
 import type { BrowserAction, BrowserBounds, BrowserDeviceViewport } from "@/features/browser/browserTypes";
-export const browserNavigate = (url: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_navigate", { url, bounds, device });
-export const browserGetUrl = () => invoke<string | null>("browser_get_url");
+let browserLifecycle = Promise.resolve();
+let lastClosedBrowserUrl: string | null = null;
+
+function queueBrowserLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+  const result = browserLifecycle.then(operation);
+  browserLifecycle = result.then(() => {}, () => {});
+  return result;
+}
+
+export const browserNavigate = (url: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) =>
+  queueBrowserLifecycle(() => invoke<void>("browser_navigate", { url, bounds, device }));
+export const browserGetUrl = () => queueBrowserLifecycle(async () =>
+  (await invoke<string | null>("browser_get_url")) ?? lastClosedBrowserUrl,
+);
+export const browserClose = () => queueBrowserLifecycle(async () => {
+  lastClosedBrowserUrl = (await invoke<string | null>("browser_close")) ?? lastClosedBrowserUrl;
+});
 export const browserSetBounds = (bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_set_bounds", { bounds, device });
 export const browserSetVisible = (visible: boolean) => invoke<void>("browser_set_visible", { visible });
 export const browserAction = (action: BrowserAction) => invoke<void>("browser_action", { action });
 export const browserCapture = () => invoke<string>("browser_capture");
+export const browserFinishCapture = (path: string, keep: boolean) =>
+  invoke<string | null>("browser_finish_capture", { path, keep });
 export const browserRuntimeInfo = () => invoke<{ engine: string; version: string }>("browser_runtime_info");

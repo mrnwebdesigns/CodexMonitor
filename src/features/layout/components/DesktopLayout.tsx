@@ -1,5 +1,6 @@
 import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { MainTopbar } from "../../app/components/MainTopbar";
+import { BrowserSplit } from "./BrowserSplit";
 import { ChatPane } from "./ChatPane";
 
 type CenterMode = "chat" | "diff";
@@ -161,64 +162,68 @@ export function DesktopLayout({
           <>
             <MainTopbar leftNode={topbarLeftNode} actionsNode={topbarActionsNode} />
             {approvalToastsNode}
-            <div className={`content${browserPanelNode ? " content-browser" : splitChatDiffView ? " content-split" : ""}`}>
-              {browserPanelNode ? <><div className="browser-chat">{chatPaneNode}</div>{browserPanelNode}</> : splitChatDiffView ? (
-                <>
-                  <div
-                    className={layerClassName({
-                      splitChatDiffView,
-                      layer: "chat",
-                      isActive: chatLayerActive,
-                    })}
-                    ref={chatLayerRef}
-                  >
-                    {chatPaneNode}
-                  </div>
-                  <div
-                    className="content-split-resizer"
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label="Resize chat/diff split"
-                    onMouseDown={onChatDiffSplitPositionResizeStart}
-                  />
-                  <div
-                    className={layerClassName({
-                      splitChatDiffView,
-                      layer: "diff",
-                      isActive: diffLayerActive,
-                    })}
-                    ref={diffLayerRef}
-                  >
-                    {showDiffViewer ? gitDiffViewerNode : null}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div
-                    className={layerClassName({
-                      splitChatDiffView,
-                      layer: "diff",
-                      isActive: diffLayerActive,
-                    })}
-                    aria-hidden={!splitChatDiffView ? !diffLayerActive : undefined}
-                    ref={diffLayerRef}
-                  >
-                    {showDiffViewer ? gitDiffViewerNode : null}
-                  </div>
-                  <div
-                    className={layerClassName({
-                      splitChatDiffView,
-                      layer: "chat",
-                      isActive: chatLayerActive,
-                    })}
-                    aria-hidden={!splitChatDiffView ? !chatLayerActive : undefined}
-                    ref={chatLayerRef}
-                  >
-                    {chatPaneNode}
-                  </div>
-                </>
-              )}
-            </div>
+            {browserPanelNode ? (
+              <BrowserSplit chatPane={chatPaneNode} browserPanel={browserPanelNode} />
+            ) : (
+              <div className={`content${splitChatDiffView ? " content-split" : ""}`}>
+                {splitChatDiffView ? (
+                  <>
+                    <div
+                      className={layerClassName({
+                        splitChatDiffView,
+                        layer: "chat",
+                        isActive: chatLayerActive,
+                      })}
+                      ref={chatLayerRef}
+                    >
+                      {chatPaneNode}
+                    </div>
+                    <div
+                      className="content-split-resizer"
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label="Resize chat/diff split"
+                      onMouseDown={onChatDiffSplitPositionResizeStart}
+                    />
+                    <div
+                      className={layerClassName({
+                        splitChatDiffView,
+                        layer: "diff",
+                        isActive: diffLayerActive,
+                      })}
+                      ref={diffLayerRef}
+                    >
+                      {showDiffViewer ? gitDiffViewerNode : null}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={layerClassName({
+                        splitChatDiffView,
+                        layer: "diff",
+                        isActive: diffLayerActive,
+                      })}
+                      aria-hidden={!splitChatDiffView ? !diffLayerActive : undefined}
+                      ref={diffLayerRef}
+                    >
+                      {showDiffViewer ? gitDiffViewerNode : null}
+                    </div>
+                    <div
+                      className={layerClassName({
+                        splitChatDiffView,
+                        layer: "chat",
+                        isActive: chatLayerActive,
+                      })}
+                      aria-hidden={!splitChatDiffView ? !chatLayerActive : undefined}
+                      ref={chatLayerRef}
+                    >
+                      {chatPaneNode}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
             <div
               className="right-panel-resizer"

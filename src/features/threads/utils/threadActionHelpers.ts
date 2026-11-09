@@ -122,6 +122,7 @@ export function buildResumeHydrationPlan({
   localActiveTurnId,
   localItems,
   localStatus,
+  mergeRetainedItems = false,
   replaceLocal,
   thread,
   threadId,
@@ -131,13 +132,14 @@ export function buildResumeHydrationPlan({
   localActiveTurnId: string | null;
   localItems: ConversationItem[];
   localStatus: { isProcessing?: boolean } | undefined;
+  mergeRetainedItems?: boolean;
   replaceLocal: boolean;
   thread: ThreadRecord;
   threadId: string;
   workspaceId: string;
 }): ResumeHydrationPlan {
   const items = buildItemsFromThread(thread);
-  if (localItems.length > 0 && !replaceLocal) {
+  if (localItems.length > 0 && !replaceLocal && !mergeRetainedItems) {
     return {
       keepLocalProcessing: false,
       lastMessageText: null,
@@ -167,7 +169,9 @@ export function buildResumeHydrationPlan({
     localItems.length > 0 &&
     items.some((item) => localItems.some((local) => local.id === item.id));
   const mergedItems =
-    items.length > 0
+    mergeRetainedItems
+      ? mergeThreadItems(items, localItems)
+      : items.length > 0
       ? replaceLocal
         ? items
         : localItems.length > 0 && !hasOverlap

@@ -17,6 +17,7 @@ import {
   steerTurn,
 } from "@services/tauri";
 import { STORAGE_KEY_DETACHED_REVIEW_LINKS } from "@threads/utils/threadStorage";
+import { MAX_INACTIVE_THREADS } from "@threads/utils/threadCache";
 import { useQueuedSend } from "./useQueuedSend";
 import { useThreads } from "./useThreads";
 import { UNREAD_THREADS_STORAGE_KEY } from "./useThreadReadState";
@@ -71,6 +72,56 @@ describe("useThreads UX integration", () => {
 
   afterEach(() => {
     nowSpy.mockRestore();
+  });
+
+  it("evicts cold transcripts and reloads them even if a late item arrived", async () => {
+    vi.mocked(resumeThread).mockImplementation(async (_workspaceId, threadId) => ({
+      result: { thread: {
+        id: threadId,
+        turns: [{ items: [{ id: `${threadId}-answer`, type: "agentMessage", text: `History for ${threadId}` }] }],
+      } },
+    }));
+    const { result } = renderHook(() => useThreads({ activeWorkspace: workspace, onWorkspaceConnected: vi.fn() }));
+    for (let index = 0; index <= MAX_INACTIVE_THREADS + 1; index += 1) {
+      await act(async () => { result.current.setActiveThreadId(`chat-${index}`); });
+    }
+    expect(result.current.hasLocalThreadSnapshot("chat-0")).toBe(false);
+    expect(result.current.hasLocalThreadSnapshot("chat-1")).toBe(true);
+    act(() => handlers?.onAgentMessageCompleted?.({
+      workspaceId: workspace.id, threadId: "chat-0", itemId: "late", text: "Late item",
+    }));
+    expect(result.current.hasLocalThreadSnapshot("chat-0")).toBe(false);
+    await act(async () => { result.current.setActiveThreadId("chat-0"); });
+    expect(vi.mocked(resumeThread).mock.calls.filter(([, id]) => id === "chat-0")).toHaveLength(2);
+    expect(result.current.activeItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: "History for chat-0" }),
+      expect.objectContaining({ text: "Late item" }),
+    ]));
+  });
+
+  it("keeps running transcripts and sheds oversized idle transcripts", async () => {
+    const largeText = "x".repeat(19_000);
+    vi.mocked(resumeThread).mockImplementation(async (_workspaceId, threadId) => ({
+      result: { thread: {
+        id: threadId,
+        turns: [{ status: "completed", items: Array.from({ length: 460 }, (_, index) => ({
+          id: `${threadId}-answer-${index}`, type: "agentMessage", text: largeText + index,
+        })) }],
+      } },
+    }));
+    const { result } = renderHook(() => useThreads({
+      activeWorkspace: workspace,
+      chatHistoryScrollbackItems: null,
+      onWorkspaceConnected: vi.fn(),
+    }));
+    await act(async () => { result.current.setActiveThreadId("busy"); });
+    act(() => handlers?.onTurnStarted?.(workspace.id, "busy", "turn-1"));
+    await act(async () => { result.current.setActiveThreadId("idle"); });
+    await act(async () => { result.current.setActiveThreadId("current"); });
+    expect(result.current.hasLocalThreadSnapshot("busy")).toBe(true);
+    expect(result.current.hasLocalThreadSnapshot("idle")).toBe(false);
+    expect(result.current.activeThreadId).toBe("current");
+    expect(result.current.lastAgentMessageByThread.idle.text).toHaveLength(1001);
   });
 
   it("tracks unseen completions through restart, viewing, and continuing a thread", async () => {

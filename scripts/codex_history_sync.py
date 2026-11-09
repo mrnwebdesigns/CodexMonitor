@@ -79,6 +79,59 @@ def parts(row, history):
             digest({k: v for k, v in history.items() if k != "thread_history_projection_state"})]
 
 
+def imported_activity(row, history):
+    """Return turn metadata only; a list refresh alone is not a completion."""
+    latest = None
+    try:
+        with open_rollout(Path(row["rollout_path"])) as stream:
+            for raw in stream:
+                if b'"event_msg"' not in raw:
+                    continue
+                try:
+                    record = json.loads(raw)
+                except (ValueError, UnicodeError):
+                    continue
+                if not isinstance(record, dict) or record.get("type") != "event_msg":
+                    continue
+                payload = record.get("payload", {})
+                if not isinstance(payload, dict) or not isinstance(payload.get("type"), str):
+                    continue
+                status = {"task_started": "inProgress", "task_complete": "completed",
+                          "turn_aborted": "interrupted"}.get(payload.get("type"))
+                if status:
+                    turn_id = payload.get("turn_id") or payload.get("turnId")
+                    # Older rollouts may have no turn ID; the event timestamp is
+                    # stable across metadata-only imports and identifies its result.
+                    turn_id = turn_id or ("legacy:" + str(record["timestamp"]) if record.get("timestamp") else None)
+                    latest = dict(turnId=str(turn_id), status=status) if turn_id else None
+    except (OSError, ValueError):
+        return None
+    if latest:
+        return latest
+    turns = history.get("thread_turns", [])
+    if not turns:
+        return None
+    turn = max(turns, key=lambda item: item.get("rollout_ordinal", 0))
+    status = turn.get("status")
+    if turn.get("turn_id") and status in {"inProgress", "completed", "interrupted", "failed"}:
+        return dict(turnId=turn["turn_id"], status=status)
+    return None
+
+
+def changed_thread(row, activity, previous_cwd):
+    change = dict(id=row["id"], cwd=row["cwd"], previousCwd=previous_cwd)
+    if activity:
+        change["activity"] = activity
+    return change
+
+
+def recent_activity(row):
+    updated = row.get("updated_at_ms") or row.get("updated_at", 0)
+    if updated < 10_000_000_000:
+        updated *= 1000
+    return not row.get("archived") and updated >= time.time() * 1000 - 7 * 24 * 60 * 60 * 1000
+
+
 def stable_metadata(row):
     return digest({k: v for k, v in row.items() if k not in LOCAL_COLUMNS | DERIVED_METADATA})
 
@@ -94,6 +147,9 @@ def replace_thread(db, row, history, key, cache_id=None, source_cache_id=None):
             keys = list(item)
             db.execute(f"insert into target_history.{quoted(table)}({','.join(map(quoted, keys))}) values ({','.join('?' for _ in keys)})", [item[k] for k in keys])
     db.execute("insert into imports(id,source_key,target_hash,owned,cache_id,source_cache_id,row_hash,stable_row_hash,cache_hash) values (?,?,?,0,?,?,?,?,?) on conflict(id) do update set source_key=excluded.source_key,target_hash=excluded.target_hash,cache_id=excluded.cache_id,source_cache_id=excluded.source_cache_id,row_hash=excluded.row_hash,stable_row_hash=excluded.stable_row_hash,cache_hash=excluded.cache_hash", (row["id"], key, fingerprint(row, history), cache_id, source_cache_id or row["id"], parts(row, history)[0], stable_metadata(row), parts(None, history)[1]))
+    activity = imported_activity(row, history)
+    db.execute("update imports set activity_json=? where id=?", (json.dumps(activity), row["id"]))
+    return activity
 
 
 def write_intent(target, row, history, key, old, old_history, cache_id=None, source_cache_id=None, old_cache_id=None):
@@ -158,11 +214,11 @@ def recover_pending(target, db, report):
                 for key in LOCAL_COLUMNS:
                     if key in row:
                         row[key] = current[key]
-            replace_thread(db, row, history, payload["key"], cache_id, payload.get("sourceCacheId", tid))
+            activity = replace_thread(db, row, history, payload["key"], cache_id, payload.get("sourceCacheId", tid))
             db.commit()
             path.unlink()
             report["recovered"] += 1
-            report["changed"].append(dict(id=tid, cwd=row["cwd"], previousCwd=payload.get("previousCwd")))
+            report["changed"].append(changed_thread(row, activity, payload.get("previousCwd")))
         except BaseException:
             db.rollback()
             raise
@@ -218,7 +274,7 @@ def ledger_open(target):
     db.row_factory = sqlite3.Row
     os.chmod(path, 0o600)
     db.execute("create table if not exists imports (id text primary key, source_key text, target_hash text, owned integer not null default 0)")
-    for column in ("cache_id", "source_cache_id", "row_hash", "stable_row_hash", "cache_hash"):
+    for column in ("cache_id", "source_cache_id", "row_hash", "stable_row_hash", "cache_hash", "activity_json"):
         if column not in columns(db, "imports"):
             db.execute(f"alter table imports add column {column} text")
     db.execute("create table if not exists leases (id text, pid integer, started text, primary key(id,pid))")
@@ -612,6 +668,15 @@ def sync(source, target, apply=False, thread_ids=None):
                 report["deferred"] += 1
                 continue
             if entry and entry["source_key"] == key:
+                # Upgrade existing imports without recopying history. Repeating
+                # recent metadata lets a new UI recover a missed startup event.
+                if entry["activity_json"] is None and recent_activity(row):
+                    existing = db.execute("select * from target_state.threads where id=?", (tid,)).fetchone()
+                    if existing:
+                        old_history = history_for(db, entry["cache_id"] or tid, "target_history")
+                        activity = imported_activity(dict(existing), old_history)
+                        db.execute("update imports set activity_json=? where id=?", (json.dumps(activity), tid))
+                        db.commit()
                 report["unchanged"] += 1
                 continue
             source_history = history_for(history, source_cache_id)
@@ -678,17 +743,27 @@ def sync(source, target, apply=False, thread_ids=None):
                     if column in row:
                         row[column] = old[column] if old else (0 if column == "is_pinned" else None)
                 intent = write_intent(target, row, source_history, key, old, target_history, cache_id, source_cache_id, old_cache_id)
-                replace_thread(db, row, source_history, key, cache_id, source_cache_id)
+                activity = replace_thread(db, row, source_history, key, cache_id, source_cache_id)
                 db.commit()
                 intent.unlink()
                 report["updated" if old else "imported"] += 1
-                report["changed"].append(dict(id=tid, cwd=row["cwd"], previousCwd=old["cwd"] if old else None))
+                report["changed"].append(changed_thread(row, activity, old["cwd"] if old else None))
                 # Older independent segments can be referenced by a local fork.
                 # Retain them; never garbage-collect by age or filename alone.
             except BaseException:
                 db.rollback()
                 # Keep a staged rollout and its intent for restart recovery.
                 raise
+        report["activitySnapshots"] = []
+        for snapshot in db.execute("""select t.*,i.activity_json from imports i
+                join target_state.threads t on t.id=i.id
+                where i.owned=0 and i.activity_json is not null
+                and not exists (select 1 from leases l where l.id=i.id)"""):
+            row = dict(snapshot)
+            if recent_activity(row):
+                activity = json.loads(row["activity_json"])
+                if activity:
+                    report["activitySnapshots"].append(changed_thread(row, activity, None))
     return report
 
 

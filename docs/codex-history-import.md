@@ -38,10 +38,11 @@ The desktop and daemon use the same shared worker and request gateway. A remote 
 - Older independent segments remain available because a Monitor-created fork may still reference them. They are not removed by age or filename alone.
 - Each chat has a durable recovery intent. If a restart interrupts commits across attached SQLite WAL databases, recovery replays only when both stores still match the recorded old/new state. Any later local edit wins and leaves a conflict artifact for review.
 - The worker publishes affected workspace IDs after changes. Sidebar refresh preserves existing state and refreshes both project roots when a chat's working directory changes.
+- Recent imported chats also publish turn ID/status metadata from their copied task lifecycle records or persisted turn rows. The private ledger retains these snapshots so the UI can recover after startup or a missed event without rereading message content or repeatedly refreshing thread lists. Completed results participate in Active Threads' **Finished · unread** indicator; continuing an imported chat clears its previous unread result. Read acknowledgments and imported-turn deduplication stay in Monitor's local UI storage. Leased and Monitor-owned chats retain their runtime state.
 
 ## Inspection and validation
 
-The target profile contains `monitor-history-sync-status.json` with the last completed pass's counts and changed chat IDs/paths. It contains no message bodies. Worker errors appear in the native diagnostic output. A successful old report is not proof that a later pass succeeded.
+The target profile contains `monitor-history-sync-status.json` with the last completed pass's counts, changed chat IDs/paths, and recent imported turn metadata. It contains no message bodies. Worker errors appear in the native diagnostic output. A successful old report is not proof that a later pass succeeded.
 
 Preview without changing either profile:
 

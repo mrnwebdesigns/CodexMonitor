@@ -1,6 +1,7 @@
 //! Desktop-only browser UI. Remote pages receive no Tauri capability grants.
 //! The sole inbound page message is bounded annotation data, reviewed in the UI.
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 #[cfg(not(chromium_browser))]
 use tauri::WebviewUrl;
 use tauri::{AppHandle, Emitter, Manager};
@@ -218,6 +219,28 @@ pub async fn browser_get_url(
         .transpose()
 }
 
+#[tauri::command]
+pub async fn browser_close(
+    app: AppHandle,
+    webview: tauri::Webview,
+) -> Result<Option<String>, String> {
+    check_owner(&webview)?;
+    #[cfg(chromium_browser)]
+    return chromium::close(&app).await;
+    #[cfg(not(chromium_browser))]
+    {
+        app.state::<BrowserState>()
+            .annotation_armed
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let Some(browser) = app.get_webview(LABEL) else {
+            return Ok(None);
+        };
+        let url = browser.url().ok().and_then(|url| parse_url(url.as_str()).ok());
+        browser.close().map_err(|error| error.to_string())?;
+        Ok(url.map(|url| url.to_string()))
+    }
+}
+
 #[cfg(not(chromium_browser))]
 #[tauri::command]
 pub async fn browser_set_bounds(
@@ -337,11 +360,7 @@ async fn capture(_app: &AppHandle) -> Result<Vec<u8>, String> {
 pub async fn browser_capture(app: AppHandle, webview: tauri::Webview) -> Result<String, String> {
     check_owner(&webview)?;
     let png = capture(&app).await?;
-    let directory = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| e.to_string())?
-        .join("browser-captures");
+    let directory = capture_directory(&app)?.join("pending");
     tokio::fs::create_dir_all(&directory)
         .await
         .map_err(|e| e.to_string())?;
@@ -350,6 +369,67 @@ pub async fn browser_capture(app: AppHandle, webview: tauri::Webview) -> Result<
         .await
         .map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+fn capture_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_cache_dir()
+        .map(|path| path.join("browser-captures"))
+        .map_err(|error| error.to_string())
+}
+
+fn pending_capture_name<'a>(directory: &Path, path: &'a Path) -> Option<&'a str> {
+    if path.parent()? != directory {
+        return None;
+    }
+    let name = path.file_name()?.to_str()?;
+    let id = uuid::Uuid::parse_str(name.strip_suffix(".png")?).ok()?;
+    (name == format!("{id}.png")).then_some(name)
+}
+
+#[tauri::command]
+pub async fn browser_finish_capture(
+    app: AppHandle,
+    webview: tauri::Webview,
+    path: String,
+    keep: bool,
+) -> Result<Option<String>, String> {
+    check_owner(&webview)?;
+    let directory = capture_directory(&app)?;
+    let path = PathBuf::from(path);
+    let name = pending_capture_name(&directory.join("pending"), &path)
+        .ok_or("Invalid pending browser capture")?;
+    if keep {
+        let destination = directory.join(name);
+        tokio::fs::rename(&path, &destination)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(Some(destination.to_string_lossy().into_owned()));
+    }
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+pub async fn reap_pending_captures(app: AppHandle) {
+    let Ok(directory) = capture_directory(&app).map(|directory| directory.join("pending")) else {
+        return;
+    };
+    let Ok(mut entries) = tokio::fs::read_dir(&directory).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let is_stale = entry.metadata().await.ok()
+            .and_then(|metadata| metadata.modified().ok())
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age.as_secs() >= 24 * 60 * 60);
+        if is_stale && pending_capture_name(&directory, &path).is_some() {
+            let _ = tokio::fs::remove_file(path).await;
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -452,6 +532,15 @@ pub async fn browser_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capture_finalization_is_limited_to_app_staged_pngs() {
+        let directory = Path::new("/app/browser-captures/pending");
+        let name = "f744e8fa-a1e6-42d1-ad7b-1dc58f024470.png";
+        assert_eq!(pending_capture_name(directory, &directory.join(name)), Some(name));
+        assert!(pending_capture_name(directory, &directory.parent().unwrap().join(name)).is_none());
+        assert!(pending_capture_name(directory, &directory.join("not-a-capture.png")).is_none());
+        assert!(pending_capture_name(directory, &directory.join("nested").join(name)).is_none());
+    }
     #[test]
     fn website_navigation_rejects_local_protocols_and_embedded_credentials() {
         for url in [

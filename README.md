@@ -4,11 +4,13 @@
 
 The MRN version is maintained privately at [mrnwebdesigns/codex-monitor-mrn](https://github.com/mrnwebdesigns/codex-monitor-mrn), with the original upstream history and MIT license preserved.
 
-- `main`: saved MRN source baseline.
-- `codex/mrn-local-evaluation`: current MRN application development.
-- `codex/chromium-preview`: isolated Browser Lab development; Chromium integration is pending.
+- `origin/main`: canonical reviewed MRN integration baseline.
+- `mrn/main`: local branch that tracks the private `origin/main`; start new MRN feature branches here.
+- `main`: clean local mirror of public `upstream/main`; do not use it as the base for MRN features.
+- `codex/mrn-local-evaluation`: retained integration-history branch at the current MRN baseline.
+- `codex/chromium-preview`: archived isolated Browser Lab history; Chromium is integrated into the MRN baseline.
 
-See [the MRN project guide](docs/mrn-local-project.md) for the working app and [Browser Lab's guide](https://github.com/mrnwebdesigns/codex-monitor-mrn/blob/codex/chromium-preview/docs/browser-lab.md) for the experimental version. Runtime profiles, credentials, chat history, settings, local reports, and build outputs are excluded from Git. GitHub Actions are disabled in the private repository; pushing source does not build, install, or release an app.
+See [the MRN project guide](docs/mrn-local-project.md) for the working app and branch workflow. Runtime profiles, credentials, chat history, settings, local reports, and build outputs are excluded from Git. GitHub Actions are disabled in the private repository; pushing source does not build, install, or release an app.
 
 The upstream project documentation follows.
 

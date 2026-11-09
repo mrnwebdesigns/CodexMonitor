@@ -33,6 +33,7 @@ struct Engine {
     observer: Option<Registration>,
     pending: Pending,
     closed: Arc<AtomicBool>,
+    closing: bool,
     loader: Option<library_loader::LibraryLoader>,
     pump: Option<macos::MessagePump>,
 }
@@ -224,6 +225,10 @@ pub async fn navigate(
     on_main(app, move |app| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
+            if engine.closing && !engine.closed.load(Ordering::SeqCst) {
+                return Err("The previous browser page is still closing".into());
+            }
+            engine.closing = false;
             initialize(app, &mut engine)?;
             disarm(app);
             if let Some(browser) = engine.browser.clone() {
@@ -302,6 +307,54 @@ pub async fn set_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
         })
     })
     .await
+}
+
+fn take_browser_for_close(engine: &mut Engine) -> Option<Browser> {
+    let browser = engine.browser.take()?;
+    engine.closing = true;
+    engine.device = None;
+    engine.observer.take();
+    if let Ok(mut pending) = engine.pending.lock() {
+        pending.clear();
+    }
+    Some(browser)
+}
+
+fn request_browser_close(browser: Browser) -> Result<(), String> {
+    if browser.is_valid() == 0 {
+        return Ok(());
+    }
+    if let Some(host) = browser.host() {
+        host.close_dev_tools();
+    }
+    macos::detach(&browser)
+}
+
+pub async fn close(app: &AppHandle) -> Result<Option<String>, String> {
+    let (url, closing, closed) = on_main(app, |app| {
+        disarm(app);
+        let (browser, url, closing, closed) = ENGINE.with(|cell| {
+            let mut engine = cell.borrow_mut();
+            let url = engine.browser.as_ref().and_then(current_url);
+            let browser = take_browser_for_close(&mut engine);
+            (browser, url, engine.closing, engine.closed.clone())
+        });
+        if let Some(browser) = browser {
+            request_browser_close(browser)?;
+        }
+        Ok((url, closing, closed))
+    })
+    .await?;
+    if closing {
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !closed.load(Ordering::SeqCst) {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .map_err(|_| "Chromium did not close the page in time".to_string())?;
+    }
+    Ok(url)
 }
 
 pub async fn action(app: &AppHandle, action: String) -> Result<(), String> {
@@ -449,10 +502,11 @@ pub async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
 
 /// Called on the main thread after the Tauri run loop exits.
 pub fn shutdown() {
-    let (browser, closed, initialized) = ENGINE.with(|cell| {
+    let (browser, closing, closed, initialized) = ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
         (
-            engine.browser.take(),
+            take_browser_for_close(&mut engine),
+            engine.closing,
             engine.closed.clone(),
             engine.initialized,
         )
@@ -466,11 +520,9 @@ pub fn shutdown() {
         return;
     }
     if let Some(browser) = browser {
-        if let Some(host) = browser.host() {
-            host.close_dev_tools();
-            host.close_browser(1);
-        }
-        drop(browser);
+        let _ = request_browser_close(browser);
+    }
+    if closing {
         let deadline = Instant::now() + Duration::from_secs(3);
         while !closed.load(Ordering::SeqCst) && Instant::now() < deadline {
             objc2::rc::autoreleasepool(|_| cef::do_message_loop_work());
@@ -480,7 +532,7 @@ pub fn shutdown() {
         let mut engine = cell.borrow_mut();
         engine.observer.take();
         engine.pump.take();
-        if closed.load(Ordering::SeqCst) {
+        if !closing || closed.load(Ordering::SeqCst) {
             cef::shutdown();
             engine.initialized = false;
         }

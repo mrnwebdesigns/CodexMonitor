@@ -16,6 +16,25 @@ const change = (workspaceId: string) => ({
 afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
 describe("automatic history sidebar refresh", () => {
+  it("forwards imported activity for disconnected projects without resuming chats or accepting unknown or malformed updates", () => {
+    let receive!: (event: AppServerEvent) => void;
+    vi.mocked(subscribeAppServerEvents).mockImplementation((listener) => { receive = listener; return vi.fn(); });
+    const onImportedThreadActivity = vi.fn();
+    const refresh = vi.fn();
+    const view = renderHook(() => useHistorySyncEvents({
+      enabled: true, workspaces: [workspace("a"), workspace("offline", false)],
+      listThreadsForWorkspaces: refresh, onImportedThreadActivity,
+    }));
+    const activity = { threadId: "imported", turnId: "turn-1", status: "completed" };
+    const event = (id: string) => ({ ...change(id), message: { method: "codex/historySynced", params: {
+      activities: [activity, { ...activity, status: "unknown" }, { ...activity, threadId: "" }, null],
+    } } });
+    act(() => { receive(event("a")); receive(event("offline")); receive(event("missing")); });
+    expect(onImportedThreadActivity.mock.calls).toEqual([["a", activity], ["offline", activity]]);
+    expect(refresh).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
   it("batches affected connected workspaces and preserves current state", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let receive!: (event: AppServerEvent) => void;

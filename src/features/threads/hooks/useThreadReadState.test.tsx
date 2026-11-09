@@ -10,8 +10,8 @@ function useReadState(activeThreadId: string | null) {
     ...initialState,
     threadStatusById: loadUnreadThreadStatuses(),
   }));
-  const complete = useThreadReadState({ activeThreadId, threadStatusById: state.threadStatusById, dispatch });
-  return { state, dispatch, complete };
+  const { onThreadCompleted: complete, onImportedThreadActivity: imported } = useThreadReadState({ activeThreadId, threadStatusById: state.threadStatusById, dispatch });
+  return { state, dispatch, complete, imported };
 }
 
 beforeEach(() => {
@@ -21,6 +21,26 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("thread read state", () => {
+  it("tracks imported completions, deduplicates metadata refreshes across restart, and clears on external continuation", () => {
+    const activity = { threadId: "imported", turnId: "turn-1", status: "completed" as const };
+    const first = renderHook(() => useReadState(null));
+    act(() => first.result.current.imported("workspace", activity));
+    expect(first.result.current.state.threadStatusById.imported).toMatchObject({ isProcessing: false, hasUnread: true });
+    act(() => first.result.current.dispatch({ type: "markUnread", threadId: "imported", hasUnread: false }));
+    act(() => first.result.current.imported("workspace", activity));
+    expect(first.result.current.state.threadStatusById.imported.hasUnread).toBe(false);
+    first.unmount();
+    const second = renderHook(() => useReadState(null));
+    act(() => second.result.current.imported("workspace", activity));
+    expect(second.result.current.state.threadStatusById.imported?.hasUnread).not.toBe(true);
+    act(() => second.result.current.imported("workspace", { ...activity, turnId: "turn-2" }));
+    expect(second.result.current.state.threadStatusById.imported.hasUnread).toBe(true);
+    act(() => second.result.current.imported("workspace", { ...activity, turnId: "turn-3", status: "inProgress" }));
+    expect(second.result.current.state.threadStatusById.imported).toMatchObject({ isProcessing: false, hasUnread: false });
+    act(() => second.result.current.imported("workspace", { ...activity, turnId: "turn-3" }));
+    expect(second.result.current.state.threadStatusById.imported).toMatchObject({ isProcessing: false, hasUnread: true });
+  });
+
   it("persists an unseen completion across restart and clears it on viewing", () => {
     const first = renderHook(() => useReadState("another-thread"));
     act(() => first.result.current.complete("workspace", "finished"));

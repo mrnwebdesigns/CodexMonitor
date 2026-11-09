@@ -150,6 +150,16 @@ pub(super) fn set_visible(browser: &Browser, visible: bool) -> Result<(), String
     Ok(())
 }
 
+pub(super) fn detach(browser: &Browser) -> Result<(), String> {
+    objc2::rc::autoreleasepool(|_| {
+        let view = native_view(browser)?;
+        // Releasing CEF's child wrapper triggers WindowDestroyed. Asking CEF
+        // to close its host window would send performClose to the main window.
+        view.removeFromSuperview();
+        Ok(())
+    })
+}
+
 pub(super) struct MessagePump(CFRunLoopTimerRef);
 
 extern "C" fn pump(_timer: CFRunLoopTimerRef, _context: *mut c_void) {

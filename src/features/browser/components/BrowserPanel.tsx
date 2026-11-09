@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from "react";
 import MoveDiagonal from "lucide-react/dist/esm/icons/move-diagonal";
 import { PanelFrame, PanelHeader } from "@/features/design-system/components/panel/PanelPrimitives";
-import { browserAction, browserCapture, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible } from "@services/tauri";
+import { browserAction, browserClose, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible } from "@services/tauri";
 import { subscribeBrowserPage, subscribeBrowserSelection } from "@services/events";
 import type { BrowserAnnotation, BrowserSelection } from "../browserTypes";
+import { useBrowserCaptureDraft } from "../hooks/useBrowserCaptureDraft";
 import { formatBrowserAnnotations, normalizeBrowserUrl } from "../utils/browserAnnotations";
 import {
   BrowserDeviceControls, MAX_DIMENSION, MIN_DIMENSION, RESPONSIVE,
@@ -51,15 +52,15 @@ export type BrowserPanelProps = {
 
 export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandled, annotations, visible, canInsert, onAddAnnotation, onRemoveAnnotation, onInsert, onClose }: BrowserPanelProps) {
   const [address, setAddress] = useState("");
+  const [restoreUrl, setRestoreUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState("Browser");
   const [hasPage, setHasPage] = useState(false);
   const [loading, setLoading] = useState(false);
   const [annotating, setAnnotating] = useState(false);
   const [selection, setSelection] = useState<BrowserSelection | null>(null);
   const [comment, setComment] = useState("");
-  const [screenshot, setScreenshot] = useState<string | null>(null);
-  const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { screenshot, capturing, capture, discard, keep } = useBrowserCaptureDraft(setError);
   const [runtime, setRuntime] = useState<{ engine: string; version: string } | null>(null);
   const [deviceEnabled, setDeviceEnabled] = useState(false);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings>({
@@ -76,6 +77,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   const scheduleBounds = useRef<(() => void) | null>(null);
   const feedback = useRef<HTMLTextAreaElement>(null);
   const navigationRequested = useRef(Boolean(navigationRequest));
+  const pageUrl = useRef<string | null>(null);
   const annotationWorkspace = useRef(workspaceId);
   const visibleRef = useRef(visible);
   const layoutRevision = useRef(0);
@@ -110,16 +112,24 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
   useEffect(() => {
     if (annotationWorkspace.current !== workspaceId) {
       annotationWorkspace.current = workspaceId;
-      setSelection(null); setComment(""); setScreenshot(null); setAnnotating(false);
+      discard();
+      setSelection(null); setComment(""); setAnnotating(false);
       void browserAction("browse").catch(() => {});
     }
-  }, [workspaceId]);
+  }, [discard, workspaceId]);
 
   useEffect(() => {
     let live = true;
     void browserRuntimeInfo().then((value) => { if (live) setRuntime(value); }).catch(() => {});
-    void browserGetUrl().then((url) => { if (live && url && !navigationRequested.current) { setAddress(url); setHasPage(true); } }).catch(() => {});
+    void browserGetUrl().then((url) => {
+      if (live && url && !navigationRequested.current) setRestoreUrl(url);
+    }).catch(() => {});
     const unsubscribePage = subscribeBrowserPage((event) => {
+      if (event.url !== pageUrl.current) {
+        pageUrl.current = event.url;
+        discard();
+        setSelection(null);
+      }
       setAddress(event.url); setHasPage(true); setLoading(event.loading);
       if (event.title) setPageTitle(event.title);
       if (event.error) { setError(event.error); setLoading(false); }
@@ -127,17 +137,16 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     });
     const unsubscribeSelection = subscribeBrowserSelection((event) => {
       if (!visibleRef.current) return;
-      setSelection(event); setComment(""); setScreenshot(null); setAnnotating(false);
-      const selectedWorkspace = annotationWorkspace.current;
-      setCapturing(true);
-      void browserCapture().then((path) => {
-        if (selectedWorkspace === annotationWorkspace.current) setScreenshot(path);
-      }).catch(() => {
-        setError("Screenshot unavailable. You can still save the element and your feedback.");
-      }).finally(() => setCapturing(false));
+      setSelection(event); setComment(""); setAnnotating(false);
+      capture();
     });
-    return () => { live = false; unsubscribePage(); unsubscribeSelection(); };
-  }, []);
+    return () => {
+      live = false;
+      unsubscribePage();
+      unsubscribeSelection();
+      void browserClose().catch(() => {});
+    };
+  }, [capture, discard]);
 
   useEffect(() => {
     if (!hasPage || !visible) { void browserSetVisible(false).catch(() => {}); return; }
@@ -172,13 +181,14 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
       navigationRequested.current = true;
       const rect = viewport.current?.getBoundingClientRect();
       if (!rect) return;
+      discard();
       setError(null); setLoading(true); setSelection(null); setAnnotating(false);
       const { bounds, device: emulation } = measureViewport(rect, device);
       if (emulation) await browserNavigate(url, bounds, emulation);
       else await browserNavigate(url, bounds);
       setAddress(url); setHasPage(true);
     } catch (reason) { setLoading(false); setError(reason instanceof Error ? reason.message : String(reason)); }
-  }, [device]);
+  }, [device, discard]);
   const handledRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !navigationRequest || handledRequest.current === navigationRequest.id) return;
@@ -187,6 +197,11 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     onNavigationHandled?.(navigationRequest.id);
     void navigateTo(navigationRequest.url);
   }, [navigationRequest, visible, navigateTo, onNavigationHandled]);
+  useEffect(() => {
+    if (!visible || !restoreUrl || navigationRequested.current) return;
+    setRestoreUrl(null);
+    void navigateTo(restoreUrl);
+  }, [navigateTo, restoreUrl, visible]);
 
   const act = async (action: Parameters<typeof browserAction>[0]) => {
     try { setError(null); await browserAction(action); setAnnotating(action === "annotate"); }
@@ -221,10 +236,11 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
     );
   };
 
-  const saveAnnotation = () => {
+  const saveAnnotation = async () => {
     if (!selection || !comment.trim() || capturing) return;
-    onAddAnnotation({ ...selection, id: crypto.randomUUID(), comment: comment.trim(), screenshot });
-    setSelection(null); setComment(""); setScreenshot(null);
+    setSelection(null); setComment("");
+    const savedScreenshot = await keep();
+    onAddAnnotation({ ...selection, id: crypto.randomUUID(), comment: comment.trim(), screenshot: savedScreenshot });
   };
 
   return (
@@ -301,7 +317,7 @@ export function BrowserPanel({ workspaceId, navigationRequest, onNavigationHandl
         <div className="browser-selection-meta"><strong>{selection.selector || selection.tag}</strong><span>{capturing ? "Capturing screenshot…" : screenshot ? "Screenshot captured" : "Element selected"}</span></div>
         {selection.text && <p className="browser-selected-text">{selection.text}</p>}
         <textarea ref={feedback} aria-label="Annotation feedback" value={comment} onChange={(event) => setComment(event.target.value)} placeholder="What should change here?" rows={2} maxLength={8000} />
-        <div className="browser-feedback-actions"><button type="button" className="secondary" disabled={!comment.trim() || capturing} onClick={saveAnnotation}>Save annotation</button><button type="button" className="ghost" onClick={() => setSelection(null)}>Discard</button></div>
+        <div className="browser-feedback-actions"><button type="button" className="secondary" disabled={!comment.trim() || capturing} onClick={() => void saveAnnotation()}>Save annotation</button><button type="button" className="ghost" onClick={() => { discard(); setSelection(null); }}>Discard</button></div>
       </div>}
       {annotations.length > 0 && <div className="browser-annotations">
         <div className="browser-feedback-actions"><strong>Feedback · {annotations.length}</strong><button type="button" className="secondary" disabled={!canInsert} onClick={() => onInsert(formatBrowserAnnotations(annotations), annotations.flatMap((item) => item.screenshot ? [item.screenshot] : []))}>Add feedback to chat</button></div>

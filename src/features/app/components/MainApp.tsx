@@ -433,6 +433,7 @@ export default function MainApp() {
     setActiveThreadId,
     hasLocalThreadSnapshot,
     activeThreadId,
+    onImportedThreadActivity,
     activeItems,
     approvals,
     userInputRequests,
@@ -526,6 +527,7 @@ export default function MainApp() {
     workspaces,
     enabled: appSettings.backendMode === "local",
     listThreadsForWorkspaces,
+    onImportedThreadActivity,
   });
   const { connectionState: remoteThreadConnectionState, reconnectLive } =
     useRemoteThreadLiveConnection({

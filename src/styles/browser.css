@@ -1,7 +1,42 @@
-.content.content-browser { display: grid; grid-row: 2; grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr); overflow: hidden; }
+.content.content-browser { display: grid; grid-row: 2; overflow: hidden; }
 .browser-toggle { margin-inline-start: 8px; }
 .browser-chat { min-width: 0; min-height: 0; display: flex; }
-.browser-panel.ds-panel { min-width: 0; min-height: 0; gap: 8px; padding: 10px; border-left: 1px solid var(--border-subtle); background: var(--surface-messages); overflow: hidden; }
+.browser-split-resizer {
+  position: relative;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.browser-split-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  background: var(--border-subtle);
+}
+.browser-split-resizer::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 14px);
+  inset-inline: 2px;
+  height: 28px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+.browser-split-resizer:is(:hover, :focus-visible)::after,
+.content-browser.is-dragging .browser-split-resizer::after {
+  background: var(--text-muted);
+}
+.browser-split-resizer:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+.content-browser.is-dragging,
+.content-browser.is-dragging * {
+  cursor: col-resize;
+  user-select: none;
+}
+.browser-panel.ds-panel { min-width: 0; min-height: 0; gap: 8px; padding: 10px; background: var(--surface-messages); overflow: hidden; }
 .browser-title { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .browser-address-bar { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .browser-address-bar input { min-width: 0; flex: 1; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--border-subtle); background: var(--surface-raised); color: var(--text-strong); font: inherit; font-size: 11px; }

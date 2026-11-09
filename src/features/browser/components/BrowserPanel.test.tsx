@@ -7,7 +7,11 @@ import { BrowserPanel } from "./BrowserPanel";
 const native = vi.hoisted(() => ({
   browserNavigate: vi.fn().mockResolvedValue(undefined),
   browserGetUrl: vi.fn().mockResolvedValue(null),
-  browserCapture: vi.fn().mockResolvedValue("/tmp/browser-capture.png"),
+  browserCapture: vi.fn().mockResolvedValue("/tmp/pending/browser-capture.png"),
+  browserClose: vi.fn().mockResolvedValue(undefined),
+  browserFinishCapture: vi.fn((_path: string, keep: boolean) =>
+    Promise.resolve(keep ? "/tmp/browser-capture.png" : null),
+  ),
   browserRuntimeInfo: vi.fn().mockResolvedValue({ engine: "Chromium", version: "156.0.8078.80" }),
   browserAction: vi.fn().mockResolvedValue(undefined),
   browserSetBounds: vi.fn().mockResolvedValue(undefined),
@@ -69,11 +73,39 @@ describe("browser feedback workflow", () => {
     await waitFor(() => expect(screen.getByText("Screenshot captured")).toBeTruthy());
     fireEvent.change(screen.getByLabelText("Annotation feedback"), { target: { value: "Make this title smaller" } });
     fireEvent.click(screen.getByRole("button", { name: "Save annotation" }));
-    expect(p.onAddAnnotation).toHaveBeenCalledWith(expect.objectContaining({ selector: "#hero", comment: "Make this title smaller", screenshot: "/tmp/browser-capture.png" }));
+    await waitFor(() => expect(p.onAddAnnotation).toHaveBeenCalledWith(expect.objectContaining({ selector: "#hero", comment: "Make this title smaller", screenshot: "/tmp/browser-capture.png" })));
+    expect(native.browserFinishCapture).toHaveBeenCalledWith("/tmp/pending/browser-capture.png", true);
     expect(p.onInsert).not.toHaveBeenCalled();
     view.rerender(<BrowserPanel {...p} annotations={[p.onAddAnnotation.mock.calls[0][0]]} />);
     fireEvent.click(screen.getByRole("button", { name: "Add feedback to chat" }));
     expect(p.onInsert).toHaveBeenCalledWith(expect.stringContaining("My requested change: Make this title smaller"), ["/tmp/browser-capture.png"]);
+    view.unmount();
+    expect(native.browserFinishCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases a completed discard and a capture that finishes after the panel closes", async () => {
+    const view = render(<BrowserPanel {...props()} />);
+    act(() => events.selection?.(selection));
+    await screen.findByText("Screenshot captured");
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(native.browserFinishCapture).toHaveBeenCalledWith("/tmp/pending/browser-capture.png", false);
+
+    let finishCapture: (path: string) => void = () => {};
+    native.browserCapture.mockImplementationOnce(() => new Promise((resolve) => { finishCapture = resolve; }));
+    act(() => events.selection?.(selection));
+    view.unmount();
+    expect(native.browserClose).toHaveBeenCalledTimes(1);
+    await act(async () => { finishCapture("/tmp/pending/late.png"); });
+    expect(native.browserFinishCapture).toHaveBeenLastCalledWith("/tmp/pending/late.png", false);
+  });
+
+  it("restores the last address after reopening", async () => {
+    native.browserGetUrl.mockResolvedValueOnce("https://example.com/last-page");
+    render(<BrowserPanel {...props()} />);
+    await waitFor(() => expect(native.browserNavigate).toHaveBeenCalledWith(
+      "https://example.com/last-page",
+      expect.any(Object),
+    ));
   });
 
   it("applies responsive sizes, device presets, and rotation before restoring the full viewport", async () => {
@@ -122,6 +154,7 @@ describe("browser feedback workflow", () => {
     act(() => events.page?.({ url: "https://example.com", loading: false }));
     view.rerender(<BrowserPanel {...p} visible={false} />);
     await waitFor(() => expect(native.browserSetVisible).toHaveBeenCalledWith(false));
+    expect(native.browserClose).not.toHaveBeenCalled();
     const before = native.browserCapture.mock.calls.length;
     act(() => events.selection?.(selection));
     expect(native.browserCapture).toHaveBeenCalledTimes(before);

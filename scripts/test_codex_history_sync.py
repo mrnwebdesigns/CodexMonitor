@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 import unittest
 import uuid
 from unittest.mock import patch
@@ -88,6 +89,52 @@ class HistorySyncTests(unittest.TestCase):
 
     def run_sync(self):
         return sync.sync(self.source, self.target, True)
+
+    def test_imported_turn_activity_is_metadata_only_and_reports_new_completions(self):
+        tid = add_thread(self.source)
+        first = self.run_sync()
+        self.assertEqual(first["changed"][0]["activity"], {"turnId": "turn-1", "status": "completed"})
+        append_turn(self.source, tid, 2, "A private reply that must not enter the report")
+        report = self.run_sync()
+        self.assertEqual(report["changed"][0]["activity"], {"turnId": "turn-2", "status": "completed"})
+        self.assertNotIn("private reply", json.dumps(report))
+
+    def test_recent_activity_survives_unchanged_passes_and_backfills_existing_imports(self):
+        tid = add_thread(self.source)
+        with database(self.source / "state_5.sqlite") as db:
+            db.execute("update threads set updated_at=? where id=?", (int(time.time()), tid))
+        first = self.run_sync()
+        self.assertEqual(first["activitySnapshots"][0]["activity"]["status"], "completed")
+        with database(self.target / "monitor-history-sync.sqlite") as db:
+            db.execute("update imports set activity_json=null where id=?", (tid,))
+        repeated = self.run_sync()
+        self.assertEqual(repeated["changed"], [])
+        self.assertEqual(repeated["activitySnapshots"], first["activitySnapshots"])
+        sync.protect(self.target, tid)
+        self.assertEqual(self.run_sync()["activitySnapshots"], [])
+
+    def test_legacy_activity_uses_the_latest_task_signal_not_the_last_assistant_comment(self):
+        tid = add_thread(self.source, mode="legacy")
+        row = thread(self.source, tid)
+        path = Path(row["rollout_path"])
+        events = [
+            {"timestamp": "2026-11-07T20:00:00Z", "type": "event_msg", "payload": {"type": "task_complete", "turn_id": "old"}},
+            {"timestamp": "2026-11-07T20:01:00Z", "type": "event_msg", "payload": {"type": "task_started", "turn_id": "new"}},
+            {"type": "event_msg", "payload": {"type": "agent_message", "message": "Still working"}},
+        ]
+        path.write_text("".join(json.dumps(event) + "\n" for event in events))
+        self.assertEqual(sync.imported_activity(row, {}), {"turnId": "new", "status": "inProgress"})
+        with path.open("a") as stream:
+            stream.write(json.dumps({"timestamp": "2026-11-07T20:02:00Z", "type": "event_msg", "payload": {"type": "task_complete", "turn_id": "new"}}) + "\n")
+        self.assertEqual(sync.imported_activity(row, {}), {"turnId": "new", "status": "completed"})
+
+    def test_compressed_legacy_activity_and_missing_turn_ids_are_supported(self):
+        from compression import zstd
+        tid = add_thread(self.source, mode="legacy", compressed=True)
+        row = thread(self.source, tid)
+        event = {"timestamp": "2026-11-07T20:00:00Z", "type": "event_msg", "payload": {"type": "task_complete"}}
+        Path(row["rollout_path"]).write_bytes(zstd.compress((json.dumps(event) + "\n").encode()))
+        self.assertEqual(sync.imported_activity(row, {}), {"turnId": "legacy:2026-11-07T20:00:00Z", "status": "completed"})
 
     def test_new_chats_preserve_monitor_chats_and_never_change_source(self):
         local = add_thread(self.target, text="Monitor-only message")

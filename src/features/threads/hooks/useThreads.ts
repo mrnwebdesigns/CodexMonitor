@@ -21,7 +21,8 @@ import { useThreadAccountInfo } from "./useThreadAccountInfo";
 import { useThreadRateLimits } from "./useThreadRateLimits";
 import { useThreadSelectors } from "./useThreadSelectors";
 import { useThreadStatus } from "./useThreadStatus";
-import { loadUnreadThreadStatuses, useThreadReadState } from "./useThreadReadState";
+import { useInactiveThreadCache } from "./useInactiveThreadCache";
+import { loadUnreadThreadStatuses, useThreadReadState, type ImportedThreadActivity } from "./useThreadReadState";
 import { useThreadUserInput } from "./useThreadUserInput";
 import { useThreadTitleAutogeneration } from "./useThreadTitleAutogeneration";
 import { useDetachedReviewTracking } from "./useDetachedReviewTracking";
@@ -113,6 +114,7 @@ export function useThreads({
     dispatch({ type: "setMaxItemsPerThread", maxItemsPerThread });
   }, [dispatch, maxItemsPerThread]);
   const loadedThreadsRef = useRef<Record<string, boolean>>({});
+  const evictedThreadsRef = useRef(new Set<string>());
   const replaceOnResumeRef = useRef<Record<string, boolean>>({});
   const pendingInterruptsRef = useRef<Set<string>>(new Set());
   const planByThreadRef = useRef(state.planByThread);
@@ -152,11 +154,21 @@ export function useThreads({
     itemsByThread: state.itemsByThread,
     threadsByWorkspace: state.threadsByWorkspace,
   });
-  const onThreadCompleted = useThreadReadState({
+  useInactiveThreadCache(
+    state, activeThreadId, dispatch, loadedThreadsRef, evictedThreadsRef, pendingInterruptsRef,
+  );
+  const { onThreadCompleted, onImportedThreadActivity: trackImportedThreadActivity } = useThreadReadState({
     activeThreadId,
     threadStatusById: state.threadStatusById,
     dispatch,
   });
+  const onImportedThreadActivity = useCallback((workspaceId: string, activity: ImportedThreadActivity) => {
+    // A resumed/locally continued chat is protected from imports; late import
+    // notifications must not overwrite the runtime that now owns it.
+    if (!loadedThreadsRef.current[activity.threadId]) {
+      trackImportedThreadActivity(workspaceId, activity);
+    }
+  }, [trackImportedThreadActivity]);
 
   const getCurrentRateLimits = useCallback(
     (workspaceId: string) => rateLimitsByWorkspaceRef.current[workspaceId] ?? null,
@@ -589,6 +601,7 @@ export function useThreads({
     getCustomName,
     threadActivityRef,
     loadedThreadsRef,
+    evictedThreadsRef,
     replaceOnResumeRef,
     applyCollabThreadLinksFromThread,
     updateThreadParent,
@@ -804,7 +817,7 @@ export function useThreads({
 
   const hasLocalThreadSnapshot = useCallback(
     (threadId: string | null) => {
-      if (!threadId) {
+      if (!threadId || evictedThreadsRef.current.has(threadId)) {
         return false;
       }
       return (
@@ -812,8 +825,46 @@ export function useThreads({
         (itemsByThreadRef.current[threadId]?.length ?? 0) > 0
       );
     },
-    [itemsByThreadRef, loadedThreadsRef],
+    [],
   );
+
+  const selectingThreadsRef = useRef(new Set<string>());
+  const restoreSelectedThread = useCallback((workspaceId: string, threadId: string) => {
+    if (hasLocalThreadSnapshot(threadId)) {
+      loadedThreadsRef.current[threadId] = true;
+      return;
+    }
+    const key = buildWorkspaceThreadKey(workspaceId, threadId);
+    if (selectingThreadsRef.current.has(key)) return;
+    selectingThreadsRef.current.add(key);
+    void (async () => {
+      try {
+        if (!hasProcessingThreadInWorkspace(workspaceId)) {
+          await ensureWorkspaceRuntimeCodexArgsBestEffort(workspaceId, threadId, "resume");
+        }
+        await resumeThreadForWorkspace(workspaceId, threadId);
+      } finally {
+        selectingThreadsRef.current.delete(key);
+      }
+    })();
+  }, [
+    ensureWorkspaceRuntimeCodexArgsBestEffort,
+    hasLocalThreadSnapshot,
+    hasProcessingThreadInWorkspace,
+    resumeThreadForWorkspace,
+  ]);
+
+  const previousSelectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = activeWorkspaceId && activeThreadId
+      ? buildWorkspaceThreadKey(activeWorkspaceId, activeThreadId)
+      : null;
+    if (previousSelectionRef.current === key) return;
+    previousSelectionRef.current = key;
+    if (activeWorkspaceId && activeThreadId && evictedThreadsRef.current.has(activeThreadId)) {
+      restoreSelectedThread(activeWorkspaceId, activeThreadId);
+    }
+  }, [activeThreadId, activeWorkspaceId, restoreSelectedThread]);
 
   const setActiveThreadId = useCallback(
     (threadId: string | null, workspaceId?: string) => {
@@ -833,27 +884,12 @@ export function useThreads({
         });
       }
       if (threadId) {
-        void (async () => {
-          const hasLocalSnapshot = hasLocalThreadSnapshot(threadId);
-          if (hasLocalSnapshot) {
-            loadedThreadsRef.current[threadId] = true;
-            return;
-          }
-          const hasActiveTurnInWorkspace = hasProcessingThreadInWorkspace(targetId);
-          if (!hasActiveTurnInWorkspace) {
-            await ensureWorkspaceRuntimeCodexArgsBestEffort(targetId, threadId, "resume");
-          }
-          await resumeThreadForWorkspace(targetId, threadId);
-        })();
+        restoreSelectedThread(targetId, threadId);
       }
     },
     [
       activeWorkspaceId,
-      ensureWorkspaceRuntimeCodexArgsBestEffort,
-      hasLocalThreadSnapshot,
-      hasProcessingThreadInWorkspace,
-      loadedThreadsRef,
-      resumeThreadForWorkspace,
+      restoreSelectedThread,
       state.activeThreadIdByWorkspace,
     ],
   );
@@ -861,6 +897,7 @@ export function useThreads({
   const removeThread = useCallback(
     (workspaceId: string, threadId: string) => {
       unpinThread(workspaceId, threadId);
+      evictedThreadsRef.current.delete(threadId);
       dispatch({ type: "removeThread", workspaceId, threadId });
       void archiveThread(workspaceId, threadId);
     },
@@ -869,6 +906,7 @@ export function useThreads({
 
   return {
     activeThreadId,
+    onImportedThreadActivity,
     setActiveThreadId,
     hasLocalThreadSnapshot,
     activeItems,

@@ -62,7 +62,7 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function readStoredWidth(key: string, fallback: number, min: number, max: number) {
+export function readStoredWidth(key: string, fallback: number, min: number, max: number) {
   if (typeof window === "undefined") {
     return fallback;
   }

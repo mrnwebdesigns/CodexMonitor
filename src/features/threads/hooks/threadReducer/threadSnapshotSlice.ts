@@ -1,5 +1,7 @@
 import type { ThreadAction, ThreadState } from "../useThreadsReducer";
 
+const MAX_PREVIEW_LENGTH = 1000;
+
 export function reduceThreadSnapshots(
   state: ThreadState,
   action: ThreadAction,
@@ -15,7 +17,12 @@ export function reduceThreadSnapshots(
         ...state,
         lastAgentMessageByThread: {
           ...state.lastAgentMessageByThread,
-          [action.threadId]: { text: action.text, timestamp: action.timestamp },
+          [action.threadId]: {
+            text: action.text.length > MAX_PREVIEW_LENGTH
+              ? `${action.text.slice(0, MAX_PREVIEW_LENGTH)}…`
+              : action.text,
+            timestamp: action.timestamp,
+          },
         },
       };
     case "setThreadTokenUsage":

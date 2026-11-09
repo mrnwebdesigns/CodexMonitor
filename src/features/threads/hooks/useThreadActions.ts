@@ -57,6 +57,7 @@ type UseThreadActionsOptions = {
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
   threadActivityRef: MutableRefObject<Record<string, Record<string, number>>>;
   loadedThreadsRef: MutableRefObject<Record<string, boolean>>;
+  evictedThreadsRef?: MutableRefObject<Set<string>>;
   replaceOnResumeRef: MutableRefObject<Record<string, boolean>>;
   applyCollabThreadLinksFromThread: (
     workspaceId: string,
@@ -86,6 +87,7 @@ export function useThreadActions({
   getCustomName,
   threadActivityRef,
   loadedThreadsRef,
+  evictedThreadsRef,
   replaceOnResumeRef,
   applyCollabThreadLinksFromThread,
   updateThreadParent,
@@ -93,6 +95,8 @@ export function useThreadActions({
   onThreadCodexMetadataDetected,
 }: UseThreadActionsOptions) {
   const resumeInFlightByThreadRef = useRef<Record<string, number>>({});
+  const itemsByThreadRef = useRef(itemsByThread);
+  itemsByThreadRef.current = itemsByThread;
   const threadStatusByIdRef = useRef(threadStatusById);
   const activeTurnIdByThreadRef = useRef(activeTurnIdByThread);
   threadStatusByIdRef.current = threadStatusById;
@@ -197,11 +201,12 @@ export function useThreadActions({
       if (!threadId) {
         return null;
       }
-      if (!force && loadedThreadsRef.current[threadId]) {
+      const wasEvicted = evictedThreadsRef?.current.has(threadId) ?? false;
+      if (!force && !wasEvicted && loadedThreadsRef.current[threadId]) {
         return threadId;
       }
       const status = threadStatusByIdRef.current[threadId];
-      if (status?.isProcessing && loadedThreadsRef.current[threadId] && !force) {
+      if (status?.isProcessing && loadedThreadsRef.current[threadId] && !force && !wasEvicted) {
         onDebug?.({
           id: `${Date.now()}-client-thread-resume-skipped`,
           timestamp: Date.now(),
@@ -229,21 +234,21 @@ export function useThreadActions({
           (await resumeThreadService(workspaceId, threadId)) as
             | Record<string, unknown>
             | null;
+        const thread = extractThreadFromResponse(response);
         onDebug?.({
           id: `${Date.now()}-server-thread-resume`,
           timestamp: Date.now(),
           source: "server",
           label: "thread/resume response",
-          payload: response,
+          payload: { threadId, found: Boolean(thread), turns: Array.isArray(thread?.turns) ? thread.turns.length : 0 },
         });
-        const thread = extractThreadFromResponse(response);
         if (thread) {
           dispatch({ type: "ensureThread", workspaceId, threadId });
           applyThreadMetadata(workspaceId, threadId, thread, {
             notifySubagent: true,
           });
           applyCollabThreadLinksFromThread(workspaceId, threadId, thread);
-          const localItems = itemsByThread[threadId] ?? [];
+          const localItems = itemsByThreadRef.current[threadId] ?? [];
           const shouldReplace =
             replaceLocal || replaceOnResumeRef.current[threadId] === true;
           if (shouldReplace) {
@@ -254,11 +259,13 @@ export function useThreadActions({
             workspaceId,
             threadId,
             replaceLocal: shouldReplace,
+            mergeRetainedItems: wasEvicted,
             localItems,
             localStatus: threadStatusByIdRef.current[threadId],
             localActiveTurnId: activeTurnIdByThreadRef.current[threadId] ?? null,
             getCustomName,
           });
+          evictedThreadsRef?.current.delete(threadId);
           if (!hydrationPlan.shouldHydrate) {
             loadedThreadsRef.current[threadId] = true;
             return threadId;
@@ -314,6 +321,7 @@ export function useThreadActions({
             );
           }
         }
+        if (wasEvicted && !thread) return null;
         loadedThreadsRef.current[threadId] = true;
         return threadId;
       } catch (error) {
@@ -344,7 +352,7 @@ export function useThreadActions({
       dispatchPreviewMessage,
       dispatch,
       getCustomName,
-      itemsByThread,
+      evictedThreadsRef,
       loadedThreadsRef,
       onDebug,
       replaceOnResumeRef,

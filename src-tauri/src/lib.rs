@@ -119,7 +119,10 @@ pub fn run() {
         })
         .setup(|app| {
             #[cfg(desktop)]
-            app.manage(browser::BrowserState::default());
+            {
+                app.manage(browser::BrowserState::default());
+                tauri::async_runtime::spawn(browser::reap_pending_captures(app.handle().clone()));
+            }
             let state = state::AppState::load(&app.handle());
             app.manage(state);
             #[cfg(desktop)]
@@ -209,10 +212,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             #[cfg(desktop)] browser::browser_navigate,
             #[cfg(desktop)] browser::browser_get_url,
+            #[cfg(desktop)] browser::browser_close,
             #[cfg(desktop)] browser::browser_set_bounds,
             #[cfg(desktop)] browser::browser_set_visible,
             #[cfg(desktop)] browser::browser_action,
             #[cfg(desktop)] browser::browser_capture,
+            #[cfg(desktop)] browser::browser_finish_capture,
             #[cfg(desktop)] browser::browser_runtime_info,
             settings::get_app_settings,
             settings::update_app_settings,

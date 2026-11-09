@@ -1,5 +1,6 @@
 import type { ConversationItem } from "@/types";
 import { normalizeItem, prepareThreadItems, upsertItem } from "@utils/threadItems";
+import { isLocalConversationItem } from "@threads/utils/threadCache";
 import type { ThreadAction, ThreadState } from "../useThreadsReducer";
 import {
   addSummaryBoundary,
@@ -170,6 +171,15 @@ export function reduceThreadItems(state: ThreadState, action: ThreadAction): Thr
         },
         threadsByWorkspace: nextThreadsByWorkspace,
       };
+    }
+    case "evictThreadItems": {
+      const itemsByThread = { ...state.itemsByThread };
+      for (const id of action.threadIds) {
+        const local = itemsByThread[id]?.filter(isLocalConversationItem);
+        if (local?.length) itemsByThread[id] = local;
+        else delete itemsByThread[id];
+      }
+      return { ...state, itemsByThread };
     }
     case "setThreadItems":
       return {

@@ -164,6 +164,7 @@ pub(crate) fn emit_changes<E: EventSink>(
         return;
     };
     let mut affected: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut activities: HashMap<&str, Vec<Value>> = HashMap::new();
     let roots: Vec<_> = workspaces
         .values()
         .map(|entry| {
@@ -173,7 +174,12 @@ pub(crate) fn emit_changes<E: EventSink>(
             )
         })
         .collect();
-    for change in changes {
+    let snapshots = report.get("activitySnapshots").and_then(Value::as_array);
+    for (change, snapshot) in changes
+        .iter()
+        .map(|change| (change, false))
+        .chain(snapshots.into_iter().flatten().map(|change| (change, true)))
+    {
         let Some(id) = change.get("id").and_then(Value::as_str) else {
             continue;
         };
@@ -188,8 +194,16 @@ pub(crate) fn emit_changes<E: EventSink>(
                 .max_by_key(|(_, root)| root.as_os_str().len())
             {
                 let ids = affected.entry(&workspace.id).or_default();
-                if !ids.contains(&id) {
+                if !snapshot && !ids.contains(&id) {
                     ids.push(id);
+                }
+                if key == "cwd" {
+                    if let Some(activity) = imported_activity(change) {
+                        let entries = activities.entry(&workspace.id).or_default();
+                        if !entries.contains(&activity) {
+                            entries.push(activity);
+                        }
+                    }
                 }
             }
         }
@@ -197,18 +211,98 @@ pub(crate) fn emit_changes<E: EventSink>(
     for (workspace_id, thread_ids) in affected {
         sink.emit_app_server_event(AppServerEvent {
             workspace_id: workspace_id.into(),
-            message: json!({"method":"codex/historySynced","params":{"threadIds":thread_ids}}),
+            message: json!({"method":"codex/historySynced","params":{
+                "threadIds":thread_ids,
+                "activities":activities.remove(workspace_id).unwrap_or_default()
+            }}),
         });
     }
+}
+
+fn imported_activity(change: &Value) -> Option<Value> {
+    let thread_id = change.get("id")?.as_str()?;
+    let activity = change.get("activity")?;
+    let turn_id = activity.get("turnId")?.as_str()?;
+    let status = activity.get("status")?.as_str()?;
+    if thread_id.is_empty()
+        || turn_id.is_empty()
+        || !matches!(
+            status,
+            "inProgress" | "completed" | "interrupted" | "failed"
+        )
+    {
+        return None;
+    }
+    Some(json!({"threadId":thread_id,"turnId":turn_id,"status":status}))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::events::{TerminalExit, TerminalOutput};
+    use std::sync::Arc;
+
+    #[derive(Clone, Default)]
+    struct Capture(Arc<StdMutex<Vec<AppServerEvent>>>);
+    impl EventSink for Capture {
+        fn emit_app_server_event(&self, event: AppServerEvent) {
+            self.0.lock().unwrap().push(event);
+        }
+        fn emit_terminal_output(&self, _: TerminalOutput) {}
+        fn emit_terminal_exit(&self, _: TerminalExit) {}
+    }
 
     #[test]
     fn absent_configuration_does_not_enable_imports() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
         assert!(config(&root).unwrap().is_none());
+    }
+
+    #[test]
+    fn imported_activity_forwards_only_recognized_turn_metadata() {
+        let activity = imported_activity(&json!({"id":"thread","activity":{
+            "turnId":"turn", "status":"completed", "message":"private result"
+        }}))
+        .unwrap();
+        assert_eq!(
+            activity,
+            json!({"threadId":"thread","turnId":"turn","status":"completed"})
+        );
+        assert!(imported_activity(
+            &json!({"id":"thread","activity":{"turnId":"turn","status":"unknown"}})
+        )
+        .is_none());
+        assert!(imported_activity(&json!({"id":"thread"})).is_none());
+    }
+
+    #[test]
+    fn activity_snapshots_reach_the_specific_workspace_without_refreshing_thread_lists() {
+        let workspaces = ["/test/project", "/test/project/tree"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| {
+                let id = index.to_string();
+                let workspace =
+                    serde_json::from_value(json!({"id":id,"name":id,"path":path})).unwrap();
+                (id, workspace)
+            })
+            .collect();
+        let snapshot = json!({"id":"thread","cwd":"/test/project/tree","activity":{
+            "turnId":"turn","status":"completed"
+        }});
+        let sink = Capture::default();
+        emit_changes(
+            &json!({"changed":[],"activitySnapshots":[snapshot]}),
+            &workspaces,
+            &sink,
+        );
+        let events = sink.0.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].workspace_id, "1");
+        assert_eq!(events[0].message["params"]["threadIds"], json!([]));
+        assert_eq!(
+            events[0].message["params"]["activities"][0]["threadId"],
+            "thread"
+        );
     }
 }

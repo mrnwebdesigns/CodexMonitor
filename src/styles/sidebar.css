@@ -1156,6 +1156,7 @@
 }
 
 .thread-status {
+  position: relative;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -1175,8 +1176,16 @@
 
 .thread-status.processing {
   background: #ff9f43;
-  box-shadow: 0 0 0 4px rgba(255, 159, 67, 0.12);
-  animation: pulse 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  box-shadow: 0 0 0 4px rgba(255, 159, 67, 0.18), 0 0 12px rgba(255, 159, 67, 0.5);
+}
+
+.thread-status.processing::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border: 2px solid #ff9f43;
+  border-radius: inherit;
+  animation: thread-status-throb 1.35s ease-out infinite;
 }
 
 .thread-status.reviewing {
@@ -1193,6 +1202,11 @@
 .thread-status.ready {
   background: #3fe47e;
   box-shadow: 0 0 0 4px rgba(63, 228, 126, 0.08);
+}
+
+@keyframes thread-status-throb {
+  0% { transform: scale(0.55); opacity: 0.9; }
+  70%, 100% { transform: scale(1.15); opacity: 0; }
 }
 
 .thread-row:hover {
