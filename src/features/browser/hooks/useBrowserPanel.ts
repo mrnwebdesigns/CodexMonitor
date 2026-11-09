@@ -11,9 +11,21 @@ function readSaved(): Record<string, BrowserAnnotation[]> {
 }
 
 export function useBrowserPanel(activeThreadId: string | null) {
-  const [open, setOpen] = useState(false);
+  const [openByThread, setOpenByThread] = useState<Record<string, boolean>>({});
+  const open = activeThreadId ? Boolean(openByThread[activeThreadId]) : false;
+  const setOpen = useCallback((nextOpen: boolean) => {
+    if (!activeThreadId) return;
+    setOpenByThread((current) => {
+      if (Boolean(current[activeThreadId]) === nextOpen) return current;
+      if (nextOpen) return { ...current, [activeThreadId]: true };
+      const { [activeThreadId]: _closed, ...remaining } = current;
+      return remaining;
+    });
+  }, [activeThreadId]);
   useEffect(() => subscribeBrowserSessionActivated(({ threadId }) => {
-    if (threadId === activeThreadId) setOpen(true);
+    if (threadId === activeThreadId) {
+      setOpenByThread((current) => current[threadId] ? current : { ...current, [threadId]: true });
+    }
   }), [activeThreadId]);
   const [navigationRequest, setNavigationRequest] = useState<{ workspaceId: string; threadId: string; id: string; url: string } | null>(null);
   const clearNavigationRequest = useCallback((id: string) => {
@@ -21,7 +33,7 @@ export function useBrowserPanel(activeThreadId: string | null) {
   }, []);
   const openWebsite = useCallback((workspaceId: string, threadId: string, url: string) => {
     setNavigationRequest({ workspaceId, threadId, url, id: crypto.randomUUID() });
-    setOpen(true);
+    setOpenByThread((current) => current[threadId] ? current : { ...current, [threadId]: true });
   }, []);
   const [annotationsByThread, setAnnotations] = useState(readSaved);
   useEffect(() => {

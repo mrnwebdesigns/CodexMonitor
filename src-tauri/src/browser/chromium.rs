@@ -274,6 +274,7 @@ fn create_session(
     thread_id: &str,
     initial_url: &str,
     bounds: &BrowserBounds,
+    hidden: bool,
 ) -> Result<(), String> {
     let root = engine
         .root_cache_path
@@ -290,7 +291,7 @@ fn create_session(
         .ok_or("Main window is unavailable")?
         .ns_view()
         .map_err(|error| error.to_string())?;
-    let window = WindowInfo {
+    let mut window = WindowInfo {
         runtime_style: RuntimeStyle::ALLOY,
         ..Default::default()
     }
@@ -303,6 +304,8 @@ fn create_session(
             height: bounds.height.round().max(1.0) as i32,
         },
     );
+    // cef::WindowInfo::set_as_child defaults macOS children to visible.
+    window.hidden = i32::from(hidden);
     let closed = Arc::new(AtomicBool::new(false));
     let mut client = PaneClient::new(
         app.clone(),
@@ -363,6 +366,7 @@ fn ensure_session(
     thread_id: &str,
     requested_url: Option<&str>,
     bounds: &BrowserBounds,
+    hidden_on_create: bool,
 ) -> Result<(), String> {
     session::validate_thread_id(thread_id)?;
     if let Some(existing) = engine.sessions.get(thread_id) {
@@ -384,7 +388,14 @@ fn ensure_session(
         .map(str::to_string)
         .or(restored)
         .ok_or("This thread has no internal-browser page yet; call internal_browser.open first")?;
-    create_session(app, engine, thread_id, &initial_url, bounds)
+    create_session(
+        app,
+        engine,
+        thread_id,
+        &initial_url,
+        bounds,
+        hidden_on_create,
+    )
 }
 
 pub async fn navigate(
@@ -399,7 +410,14 @@ pub async fn navigate(
             let mut engine = cell.borrow_mut();
             initialize(app, &mut engine)?;
             disarm(app);
-            ensure_session(app, &mut engine, &thread_id, Some(url.as_str()), &bounds)?;
+            ensure_session(
+                app,
+                &mut engine,
+                &thread_id,
+                Some(url.as_str()),
+                &bounds,
+                false,
+            )?;
             hide_other_sessions(&mut engine, &thread_id)?;
             let browser_session = engine
                 .sessions
@@ -763,13 +781,56 @@ async fn ensure_tool_session(app: &AppHandle, thread_id: String) -> Result<(), S
                 width: 800.0,
                 height: 600.0,
             };
-            ensure_session(app, &mut engine, &thread_id, None, &bounds)?;
-            hide_other_sessions(&mut engine, &thread_id)?;
-            let browser_session = engine
-                .sessions
-                .get(&thread_id)
-                .ok_or("Open a website in this thread's internal browser first")?;
-            macos::set_visible(&browser_session.browser, true)
+            // Agent tools can run while the React browser panel is closed. A
+            // newly created native child must remain hidden until the panel
+            // mounts and supplies its measured rectangle.
+            ensure_session(app, &mut engine, &thread_id, None, &bounds, true)?;
+            Ok(())
+        })
+    })
+    .await?;
+    let _ = app.emit_to(
+        "main",
+        "browser-session-activated",
+        serde_json::json!({"threadId": activated_thread_id}),
+    );
+    Ok(())
+}
+
+async fn open_from_tool(app: &AppHandle, thread_id: String, url: tauri::Url) -> Result<(), String> {
+    let activated_thread_id = thread_id.clone();
+    on_main(app, move |app| {
+        ENGINE.with(|cell| {
+            let mut engine = cell.borrow_mut();
+            initialize(app, &mut engine)?;
+            disarm(app);
+            let fallback_bounds = BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            };
+            let session_exists = engine.sessions.contains_key(&thread_id);
+            // Do not overwrite an existing pane's measured bounds with the
+            // fallback. For a new session, CEF creates the child hidden; the
+            // activation event lets BrowserPanel measure, position, and show it.
+            ensure_session(
+                app,
+                &mut engine,
+                &thread_id,
+                Some(url.as_str()),
+                &fallback_bounds,
+                true,
+            )?;
+            if session_exists {
+                engine
+                    .sessions
+                    .get(&thread_id)
+                    .and_then(|session| session.browser.main_frame())
+                    .ok_or("Chromium page is unavailable")?
+                    .load_url(Some(&CefString::from(url.as_str())));
+            }
+            Ok(())
         })
     })
     .await?;
@@ -837,24 +898,7 @@ pub async fn tool_call(
                 .and_then(Value::as_str)
                 .ok_or("url is required")?;
             let url = parse_url(url)?;
-            navigate(
-                app,
-                thread_id.clone(),
-                url,
-                BrowserBounds {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 800.0,
-                    height: 600.0,
-                },
-                None,
-            )
-            .await?;
-            let _ = app.emit_to(
-                "main",
-                "browser-session-activated",
-                serde_json::json!({"threadId":thread_id}),
-            );
+            open_from_tool(app, thread_id, url).await?;
             Ok(vec![
                 serde_json::json!({"type":"inputText","text":"Opened in this thread's visible internal browser."}),
             ])
