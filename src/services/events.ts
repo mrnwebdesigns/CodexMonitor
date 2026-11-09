@@ -372,5 +372,7 @@ export function subscribeMenuComposerCycleCollaboration(
 import type { BrowserPageEvent, BrowserSelection } from "@/features/browser/browserTypes";
 const browserPageHub = createEventHub<BrowserPageEvent>("browser-page");
 const browserSelectionHub = createEventHub<BrowserSelection>("browser-selection");
+const browserSessionActivatedHub = createEventHub<{ threadId: string }>("browser-session-activated");
 export const subscribeBrowserPage = browserPageHub.subscribe;
 export const subscribeBrowserSelection = browserSelectionHub.subscribe;
+export const subscribeBrowserSessionActivated = browserSessionActivatedHub.subscribe;

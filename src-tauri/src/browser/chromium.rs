@@ -1,7 +1,7 @@
 //! macOS website pane backed by CEF. The privileged app shell stays in WKWebView.
 //! All CEF objects and Cocoa views are confined to the application main thread.
 use super::{
-    parse_selection, parse_url, BrowserBounds, BrowserDeviceViewport, BrowserState, SCRIPT,
+    parse_selection, parse_url, session, BrowserBounds, BrowserDeviceViewport, BrowserState, SCRIPT,
 };
 use base64::Engine as _;
 use cef::*;
@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::{
     cell::RefCell,
     collections::HashMap,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicI32, Ordering},
         Arc, Mutex,
@@ -28,14 +29,25 @@ static NEXT_REQUEST: AtomicI32 = AtomicI32::new(1);
 struct Engine {
     initialized: bool,
     startup_error: Option<String>,
-    browser: Option<Browser>,
+    sessions: HashMap<String, BrowserSession>,
+    active_thread_id: Option<String>,
+    root_cache_path: Option<PathBuf>,
+    loader: Option<library_loader::LibraryLoader>,
+    pump: Option<macos::MessagePump>,
+}
+
+struct BrowserSession {
+    thread_id: String,
+    session_id: String,
+    profile_dir: PathBuf,
+    ownership: Option<session::OwnershipClaim>,
+    browser: Browser,
+    _request_context: RequestContext,
     device: Option<BrowserDeviceViewport>,
     observer: Option<Registration>,
     pending: Pending,
     closed: Arc<AtomicBool>,
     closing: bool,
-    loader: Option<library_loader::LibraryLoader>,
-    pump: Option<macos::MessagePump>,
 }
 
 thread_local! { static ENGINE: RefCell<Engine> = RefCell::new(Engine::default()); }
@@ -105,7 +117,8 @@ fn initialize(app: &AppHandle, engine: &mut Engine) -> Result<(), String> {
         persist_session_cookies: 1,
         keychain_service_name: CefString::from(keychain_service.as_str()),
         keychain_account_name: CefString::from(identifier),
-        cache_path: CefString::from(cache.to_string_lossy().as_ref()),
+        // Individual request contexts own persistent, thread-isolated profiles.
+        cache_path: CefString::default(),
         root_cache_path: CefString::from(cache.to_string_lossy().as_ref()),
         framework_dir_path: CefString::from(framework.to_string_lossy().as_ref()),
         main_bundle_path: CefString::from(
@@ -132,6 +145,7 @@ fn initialize(app: &AppHandle, engine: &mut Engine) -> Result<(), String> {
         return Err("Chromium could not be initialized".into());
     }
     engine.initialized = true;
+    engine.root_cache_path = Some(cache);
     engine.pump = Some(macos::MessagePump::install()?);
     Ok(())
 }
@@ -152,16 +166,45 @@ fn current_url(browser: &Browser) -> Option<String> {
     parse_url(&url).ok().map(|url| url.to_string())
 }
 
-fn emit_page(app: &AppHandle, browser: &Browser, title: Option<String>, error: Option<String>) {
+fn emit_page(
+    app: &AppHandle,
+    browser: &Browser,
+    thread_id: &str,
+    session_id: &str,
+    profile_dir: &std::path::Path,
+    title: Option<String>,
+    error: Option<String>,
+) {
     let Some(url) = current_url(browser) else {
         return;
     };
+    if let Ok(record) = session::new_record(thread_id, Some(url.clone())) {
+        let _ = session::write_record(profile_dir, &record);
+    }
     let _ = app.emit_to(
         "main",
         "browser-page",
         serde_json::json!({
+            "threadId": thread_id, "sessionId": session_id,
             "url": url, "loading": browser.is_loading() != 0, "title": title, "error": error,
         }),
+    );
+}
+
+fn log_session(event: &str, session: &BrowserSession, decision: &str) {
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "component": "internal_browser",
+            "event": event,
+            "decision": decision,
+            "threadId": session.thread_id,
+            "browserSessionId": session.session_id,
+            "profileDirectory": session.profile_dir,
+            "browserProcessId": std::process::id(),
+            "browserId": session.browser.identifier(),
+            "devtoolsConnection": format!("cef-devtools:{}", session.browser.identifier()),
+        })
     );
 }
 
@@ -201,23 +244,150 @@ fn apply_device(browser: &Browser, device: Option<BrowserDeviceViewport>) -> Res
 
 fn update_viewport(
     app: &AppHandle,
-    engine: &mut Engine,
+    browser_session: &mut BrowserSession,
     bounds: &BrowserBounds,
     device: Option<BrowserDeviceViewport>,
 ) -> Result<(), String> {
-    let Some(browser) = engine.browser.as_ref() else {
-        return Ok(());
-    };
-    macos::set_bounds(app, browser, bounds)?;
-    if engine.device != device {
-        apply_device(browser, device)?;
-        engine.device = device;
+    macos::set_bounds(app, &browser_session.browser, bounds)?;
+    if browser_session.device != device {
+        apply_device(&browser_session.browser, device)?;
+        browser_session.device = device;
     }
     Ok(())
 }
 
+fn hide_other_sessions(engine: &mut Engine, thread_id: &str) -> Result<(), String> {
+    for (other_thread_id, browser_session) in &engine.sessions {
+        if other_thread_id != thread_id {
+            macos::set_visible(&browser_session.browser, false)?;
+        }
+    }
+    engine.active_thread_id = Some(thread_id.to_string());
+    Ok(())
+}
+
+fn create_session(
+    app: &AppHandle,
+    engine: &mut Engine,
+    thread_id: &str,
+    initial_url: &str,
+    bounds: &BrowserBounds,
+) -> Result<(), String> {
+    let root = engine
+        .root_cache_path
+        .as_ref()
+        .ok_or("Chromium profile root is unavailable")?;
+    let profile_dir = session::profile_dir(root, thread_id)?;
+    std::fs::create_dir_all(&profile_dir).map_err(|error| error.to_string())?;
+    let session_id = session::session_id(thread_id)?;
+    let ownership = session::claim_ownership(&profile_dir, thread_id)?;
+    let ownership_decision = ownership.decision;
+
+    let parent = app
+        .get_window("main")
+        .ok_or("Main window is unavailable")?
+        .ns_view()
+        .map_err(|error| error.to_string())?;
+    let window = WindowInfo {
+        runtime_style: RuntimeStyle::ALLOY,
+        ..Default::default()
+    }
+    .set_as_child(
+        parent.cast(),
+        &Rect {
+            x: 0,
+            y: 0,
+            width: bounds.width.round().max(1.0) as i32,
+            height: bounds.height.round().max(1.0) as i32,
+        },
+    );
+    let closed = Arc::new(AtomicBool::new(false));
+    let mut client = PaneClient::new(
+        app.clone(),
+        thread_id.to_string(),
+        session_id.clone(),
+        profile_dir.clone(),
+        closed.clone(),
+    );
+    let context_settings = RequestContextSettings {
+        cache_path: CefString::from(profile_dir.to_string_lossy().as_ref()),
+        persist_session_cookies: 1,
+        ..Default::default()
+    };
+    let mut request_context = request_context_create_context(Some(&context_settings), None)
+        .ok_or("The isolated Chromium request context could not be created")?;
+    let browser = browser_host_create_browser_sync(
+        Some(&window),
+        Some(&mut client),
+        Some(&CefString::from(initial_url)),
+        Some(&BrowserSettings::default()),
+        None,
+        Some(&mut request_context),
+    )
+    .ok_or("The embedded Chromium view could not be created")?;
+    if let Some(host) = browser.host() {
+        host.set_accessibility_state(State::from(sys::cef_state_t::STATE_ENABLED));
+    }
+    let browser_session = BrowserSession {
+        thread_id: thread_id.to_string(),
+        session_id,
+        profile_dir,
+        ownership: Some(ownership),
+        browser,
+        _request_context: request_context,
+        device: None,
+        observer: None,
+        pending: Arc::new(Mutex::new(HashMap::new())),
+        closed,
+        closing: false,
+    };
+    log_session(
+        "session_open",
+        &browser_session,
+        match ownership_decision {
+            session::OwnershipDecision::Claimed => "new-session",
+            session::OwnershipDecision::RecoveredStale => "stale-recovery",
+        },
+    );
+    engine
+        .sessions
+        .insert(thread_id.to_string(), browser_session);
+    Ok(())
+}
+
+fn ensure_session(
+    app: &AppHandle,
+    engine: &mut Engine,
+    thread_id: &str,
+    requested_url: Option<&str>,
+    bounds: &BrowserBounds,
+) -> Result<(), String> {
+    session::validate_thread_id(thread_id)?;
+    if let Some(existing) = engine.sessions.get(thread_id) {
+        if existing.closing && !existing.closed.load(Ordering::SeqCst) {
+            return Err("This thread's previous browser page is still closing".into());
+        }
+        log_session("session_open", existing, "reconnect");
+        return Ok(());
+    }
+    let profile = session::profile_dir(
+        engine
+            .root_cache_path
+            .as_ref()
+            .ok_or("Chromium profile root is unavailable")?,
+        thread_id,
+    )?;
+    let restored = session::read_record(&profile, thread_id).and_then(|record| record.url);
+    let initial_url = requested_url
+        .map(str::to_string)
+        .or(restored)
+        .ok_or("This thread has no internal-browser page yet; call internal_browser.open first")?;
+    create_session(app, engine, thread_id, &initial_url, bounds)
+}
+
 pub async fn navigate(
     app: &AppHandle,
+    thread_id: String,
     url: tauri::Url,
     bounds: BrowserBounds,
     device: Option<BrowserDeviceViewport>,
@@ -225,83 +395,74 @@ pub async fn navigate(
     on_main(app, move |app| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
-            if engine.closing && !engine.closed.load(Ordering::SeqCst) {
-                return Err("The previous browser page is still closing".into());
-            }
-            engine.closing = false;
             initialize(app, &mut engine)?;
             disarm(app);
-            if let Some(browser) = engine.browser.clone() {
-                update_viewport(app, &mut engine, &bounds, device)?;
-                browser
-                    .main_frame()
-                    .ok_or("Chromium page is unavailable")?
-                    .load_url(Some(&CefString::from(url.as_str())));
-                return macos::set_visible(&browser, true);
-            }
-            let parent = app
-                .get_window("main")
-                .ok_or("Main window is unavailable")?
-                .ns_view()
-                .map_err(|error| error.to_string())?;
-            let window = WindowInfo {
-                runtime_style: RuntimeStyle::ALLOY,
-                ..Default::default()
-            }
-            .set_as_child(
-                parent.cast(),
-                &Rect {
-                    x: 0,
-                    y: 0,
-                    width: bounds.width.round() as i32,
-                    height: bounds.height.round() as i32,
-                },
-            );
-            let mut client = PaneClient::new(app.clone(), engine.closed.clone());
-            engine.closed.store(false, Ordering::SeqCst);
-            let browser = browser_host_create_browser_sync(
-                Some(&window),
-                Some(&mut client),
-                Some(&CefString::from(url.as_str())),
-                Some(&BrowserSettings::default()),
-                None,
-                None,
-            )
-            .ok_or("The embedded Chromium view could not be created")?;
-            if let Some(host) = browser.host() {
-                host.set_accessibility_state(State::from(sys::cef_state_t::STATE_ENABLED));
-            }
-            engine.browser = Some(browser.clone());
-            update_viewport(app, &mut engine, &bounds, device)?;
-            macos::set_visible(&browser, true)
+            ensure_session(app, &mut engine, &thread_id, Some(url.as_str()), &bounds)?;
+            hide_other_sessions(&mut engine, &thread_id)?;
+            let browser_session = engine
+                .sessions
+                .get_mut(&thread_id)
+                .ok_or("Browser session is unavailable")?;
+            update_viewport(app, browser_session, &bounds, device)?;
+            browser_session
+                .browser
+                .main_frame()
+                .ok_or("Chromium page is unavailable")?
+                .load_url(Some(&CefString::from(url.as_str())));
+            macos::set_visible(&browser_session.browser, true)
         })
     })
     .await
 }
 
-pub async fn get_url(app: &AppHandle) -> Result<Option<String>, String> {
-    on_main(app, |_| {
-        ENGINE.with(|cell| Ok(cell.borrow().browser.as_ref().and_then(current_url)))
+pub async fn get_url(app: &AppHandle, thread_id: String) -> Result<Option<String>, String> {
+    on_main(app, move |app| {
+        ENGINE.with(|cell| {
+            let mut engine = cell.borrow_mut();
+            initialize(app, &mut engine)?;
+            if let Some(browser_session) = engine.sessions.get(&thread_id) {
+                return Ok(current_url(&browser_session.browser));
+            }
+            let profile = session::profile_dir(
+                engine
+                    .root_cache_path
+                    .as_ref()
+                    .ok_or("Chromium profile root is unavailable")?,
+                &thread_id,
+            )?;
+            Ok(session::read_record(&profile, &thread_id).and_then(|record| record.url))
+        })
     })
     .await
 }
 
 pub async fn set_bounds(
     app: &AppHandle,
+    thread_id: String,
     bounds: BrowserBounds,
     device: Option<BrowserDeviceViewport>,
 ) -> Result<(), String> {
     on_main(app, move |app| {
-        ENGINE.with(|cell| update_viewport(app, &mut cell.borrow_mut(), &bounds, device))
+        ENGINE.with(|cell| {
+            let mut engine = cell.borrow_mut();
+            let Some(browser_session) = engine.sessions.get_mut(&thread_id) else {
+                return Ok(());
+            };
+            update_viewport(app, browser_session, &bounds, device)
+        })
     })
     .await
 }
 
-pub async fn set_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
+pub async fn set_visible(app: &AppHandle, thread_id: String, visible: bool) -> Result<(), String> {
     on_main(app, move |_| {
         ENGINE.with(|cell| {
-            if let Some(browser) = cell.borrow().browser.as_ref() {
-                macos::set_visible(browser, visible)?;
+            let mut engine = cell.borrow_mut();
+            if visible {
+                hide_other_sessions(&mut engine, &thread_id)?;
+            }
+            if let Some(browser_session) = engine.sessions.get(&thread_id) {
+                macos::set_visible(&browser_session.browser, visible)?;
             }
             Ok(())
         })
@@ -309,15 +470,14 @@ pub async fn set_visible(app: &AppHandle, visible: bool) -> Result<(), String> {
     .await
 }
 
-fn take_browser_for_close(engine: &mut Engine) -> Option<Browser> {
-    let browser = engine.browser.take()?;
-    engine.closing = true;
-    engine.device = None;
-    engine.observer.take();
-    if let Ok(mut pending) = engine.pending.lock() {
+fn prepare_session_close(browser_session: &mut BrowserSession) -> Browser {
+    browser_session.closing = true;
+    browser_session.device = None;
+    browser_session.observer.take();
+    if let Ok(mut pending) = browser_session.pending.lock() {
         pending.clear();
     }
-    Some(browser)
+    browser_session.browser.clone()
 }
 
 fn request_browser_close(browser: Browser) -> Result<(), String> {
@@ -330,19 +490,32 @@ fn request_browser_close(browser: Browser) -> Result<(), String> {
     macos::detach(&browser)
 }
 
-pub async fn close(app: &AppHandle) -> Result<Option<String>, String> {
-    let (url, closing, closed) = on_main(app, |app| {
+pub async fn close(app: &AppHandle, thread_id: String) -> Result<Option<String>, String> {
+    let (url, closing, closed, ownership) = on_main(app, move |app| {
         disarm(app);
-        let (browser, url, closing, closed) = ENGINE.with(|cell| {
+        let (browser, url, closing, closed, ownership) = ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
-            let url = engine.browser.as_ref().and_then(current_url);
-            let browser = take_browser_for_close(&mut engine);
-            (browser, url, engine.closing, engine.closed.clone())
+            let Some(mut browser_session) = engine.sessions.remove(&thread_id) else {
+                return (None, None, false, Arc::new(AtomicBool::new(true)), None);
+            };
+            let url = current_url(&browser_session.browser);
+            if let Ok(record) = session::new_record(&thread_id, url.clone()) {
+                let _ = session::write_record(&browser_session.profile_dir, &record);
+            }
+            log_session("session_close", &browser_session, "thread-close");
+            let ownership = browser_session.ownership.take();
+            let browser = prepare_session_close(&mut browser_session);
+            let closing = browser_session.closing;
+            let closed = browser_session.closed.clone();
+            if engine.active_thread_id.as_deref() == Some(thread_id.as_str()) {
+                engine.active_thread_id = None;
+            }
+            (Some(browser), url, closing, closed, ownership)
         });
         if let Some(browser) = browser {
             request_browser_close(browser)?;
         }
-        Ok((url, closing, closed))
+        Ok((url, closing, closed, ownership))
     })
     .await?;
     if closing {
@@ -354,10 +527,13 @@ pub async fn close(app: &AppHandle) -> Result<Option<String>, String> {
         .await
         .map_err(|_| "Chromium did not close the page in time".to_string())?;
     }
+    if let Some(ownership) = ownership {
+        session::release_ownership(ownership);
+    }
     Ok(url)
 }
 
-pub async fn action(app: &AppHandle, action: String) -> Result<(), String> {
+pub async fn action(app: &AppHandle, thread_id: String, action: String) -> Result<(), String> {
     if !matches!(
         action.as_str(),
         "back" | "forward" | "reload" | "stop" | "annotate" | "browse" | "devtools"
@@ -367,9 +543,10 @@ pub async fn action(app: &AppHandle, action: String) -> Result<(), String> {
     on_main(app, move |app| {
         ENGINE.with(|cell| {
             let engine = cell.borrow();
-            let Some(browser) = engine.browser.as_ref() else {
+            let Some(browser_session) = engine.sessions.get(&thread_id) else {
                 return Ok(());
             };
+            let browser = &browser_session.browser;
             if action == "devtools" {
                 let host = browser.host().ok_or("Chromium page is unavailable")?;
                 let window = WindowInfo {
@@ -416,54 +593,64 @@ pub async fn action(app: &AppHandle, action: String) -> Result<(), String> {
     .await
 }
 
-pub async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
+async fn execute_devtools_method(
+    app: &AppHandle,
+    thread_id: String,
+    method: String,
+    parameters: Option<Value>,
+) -> Result<Value, String> {
     let id = NEXT_REQUEST.fetch_add(1, Ordering::SeqCst);
     let (tx, rx) = oneshot::channel();
+    let request_thread_id = thread_id.clone();
     on_main(app, move |_| {
         ENGINE.with(|cell| {
             let mut engine = cell.borrow_mut();
-            let browser = engine
-                .browser
-                .clone()
-                .ok_or("Open a website before capturing it")?;
-            if engine.observer.is_none() {
-                let mut observer = CaptureObserver::new(engine.pending.clone());
-                engine.observer = browser
+            let browser_session = engine
+                .sessions
+                .get_mut(&request_thread_id)
+                .ok_or("Open a website in this thread's internal browser first")?;
+            let browser = browser_session.browser.clone();
+            if browser_session.observer.is_none() {
+                let mut observer = CaptureObserver::new(browser_session.pending.clone());
+                browser_session.observer = browser
                     .host()
                     .and_then(|host| host.add_dev_tools_message_observer(Some(&mut observer)));
-                if engine.observer.is_none() {
-                    return Err("Chromium screenshot observer is unavailable".into());
+                if browser_session.observer.is_none() {
+                    return Err("Chromium DevTools observer is unavailable".into());
                 }
             }
-            let mut pending = engine
+            let mut pending = browser_session
                 .pending
                 .lock()
-                .map_err(|_| "Screenshot state is unavailable")?;
+                .map_err(|_| "Chromium DevTools state is unavailable")?;
             if pending.len() >= 4 {
-                return Err("A screenshot is already being captured".into());
+                return Err("Too many browser tool calls are already running".into());
             }
             pending.insert(id, tx);
             drop(pending);
-            let mut parameters =
-                dictionary_value_create().ok_or("Screenshot parameters are unavailable")?;
-            parameters.set_string(
-                Some(&CefString::from("format")),
-                Some(&CefString::from("png")),
-            );
-            parameters.set_bool(Some(&CefString::from("captureBeyondViewport")), 0);
+            let mut cef_parameters = parameters
+                .map(|value| {
+                    parse_json(
+                        Some(&CefString::from(value.to_string().as_str())),
+                        JsonParserOptions::RFC,
+                    )
+                    .and_then(|value| value.dictionary())
+                    .ok_or("Invalid DevTools parameters")
+                })
+                .transpose()?;
             let sent = browser
                 .host()
                 .ok_or("Chromium page is unavailable")?
                 .execute_dev_tools_method(
                     id,
-                    Some(&CefString::from("Page.captureScreenshot")),
-                    Some(&mut parameters),
+                    Some(&CefString::from(method.as_str())),
+                    cef_parameters.as_mut(),
                 );
             if sent == 0 {
-                if let Ok(mut pending) = engine.pending.lock() {
+                if let Ok(mut pending) = browser_session.pending.lock() {
                     pending.remove(&id);
                 }
-                return Err("Chromium could not capture the page".into());
+                return Err("Chromium rejected the DevTools request".into());
             }
             Ok(())
         })
@@ -473,17 +660,29 @@ pub async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
     if result.is_err() {
         let _ = on_main(app, move |_| {
             ENGINE.with(|cell| {
-                if let Ok(mut pending) = cell.borrow().pending.lock() {
-                    pending.remove(&id);
+                if let Some(browser_session) = cell.borrow().sessions.get(&thread_id) {
+                    if let Ok(mut pending) = browser_session.pending.lock() {
+                        pending.remove(&id);
+                    }
                 }
             });
             Ok(())
         })
         .await;
     }
-    let payload = result
-        .map_err(|_| "Screenshot timed out")?
-        .map_err(|_| "Screenshot was cancelled")??;
+    result
+        .map_err(|_| "Browser tool call timed out")?
+        .map_err(|_| "Browser tool call was cancelled")?
+}
+
+pub async fn capture(app: &AppHandle, thread_id: String) -> Result<Vec<u8>, String> {
+    let payload = execute_devtools_method(
+        app,
+        thread_id,
+        "Page.captureScreenshot".into(),
+        Some(serde_json::json!({"format":"png","captureBeyondViewport":false})),
+    )
+    .await?;
     let data = payload
         .get("data")
         .and_then(Value::as_str)
@@ -500,16 +699,239 @@ pub async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+async fn ensure_tool_session(app: &AppHandle, thread_id: String) -> Result<(), String> {
+    let activated_thread_id = thread_id.clone();
+    on_main(app, move |app| {
+        ENGINE.with(|cell| {
+            let mut engine = cell.borrow_mut();
+            initialize(app, &mut engine)?;
+            let bounds = BrowserBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 800.0,
+                height: 600.0,
+            };
+            ensure_session(app, &mut engine, &thread_id, None, &bounds)?;
+            hide_other_sessions(&mut engine, &thread_id)?;
+            let browser_session = engine
+                .sessions
+                .get(&thread_id)
+                .ok_or("Open a website in this thread's internal browser first")?;
+            macos::set_visible(&browser_session.browser, true)
+        })
+    })
+    .await?;
+    let _ = app.emit_to(
+        "main",
+        "browser-session-activated",
+        serde_json::json!({"threadId": activated_thread_id}),
+    );
+    Ok(())
+}
+
+fn runtime_value(payload: Value) -> Result<Value, String> {
+    if let Some(exception) = payload.get("exceptionDetails") {
+        return Err(format!(
+            "Page JavaScript failed: {}",
+            exception
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
+        ));
+    }
+    Ok(payload
+        .get("result")
+        .and_then(|result| result.get("value"))
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
+async fn evaluate(app: &AppHandle, thread_id: String, expression: String) -> Result<Value, String> {
+    ensure_tool_session(app, thread_id.clone()).await?;
+    let payload = execute_devtools_method(
+        app,
+        thread_id,
+        "Runtime.evaluate".into(),
+        Some(serde_json::json!({
+            "expression": expression,
+            "returnByValue": true,
+            "awaitPromise": true,
+            "userGesture": true
+        })),
+    )
+    .await?;
+    runtime_value(payload)
+}
+
+pub async fn tool_call(
+    app: &AppHandle,
+    thread_id: String,
+    tool: String,
+    arguments: Value,
+) -> Result<Vec<Value>, String> {
+    session::validate_thread_id(&thread_id)?;
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "component": "internal_browser", "event": "tool_call",
+            "threadId": thread_id, "tool": tool,
+            "argumentsLogged": false
+        })
+    );
+    match tool.as_str() {
+        "open" => {
+            let url = arguments
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or("url is required")?;
+            let url = parse_url(url)?;
+            navigate(
+                app,
+                thread_id.clone(),
+                url,
+                BrowserBounds {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 800.0,
+                    height: 600.0,
+                },
+                None,
+            )
+            .await?;
+            let _ = app.emit_to(
+                "main",
+                "browser-session-activated",
+                serde_json::json!({"threadId":thread_id}),
+            );
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Opened in this thread's visible internal browser."}),
+            ])
+        }
+        "tabs" => {
+            let result = on_main(app, move |app| {
+                ENGINE.with(|cell| {
+                    let mut engine = cell.borrow_mut();
+                    initialize(app, &mut engine)?;
+                    if let Some(browser_session) = engine.sessions.get(&thread_id) {
+                        return Ok(serde_json::json!([{
+                            "id": browser_session.session_id,
+                            "url": current_url(&browser_session.browser),
+                            "visible": engine.active_thread_id.as_deref() == Some(thread_id.as_str()),
+                        }]));
+                    }
+                    let profile = session::profile_dir(
+                        engine.root_cache_path.as_ref().ok_or("Chromium profile root is unavailable")?,
+                        &thread_id,
+                    )?;
+                    let Some(record) = session::read_record(&profile, &thread_id) else {
+                        return Ok(serde_json::json!([]));
+                    };
+                    Ok(serde_json::json!([{
+                        "id": record.session_id,
+                        "url": record.url,
+                        "visible": false,
+                    }]))
+                })
+            }).await?;
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":result.to_string()}),
+            ])
+        }
+        "snapshot" => {
+            let expression = r#"(() => {
+              const visible = (el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+              const selector = (el) => {
+                if (el.id) return '#' + CSS.escape(el.id);
+                const parts = []; let node = el;
+                while (node && node.nodeType === 1 && parts.length < 5) {
+                  let part = node.tagName.toLowerCase();
+                  const parent = node.parentElement;
+                  if (parent) { const peers = [...parent.children].filter(x => x.tagName === node.tagName); if (peers.length > 1) part += `:nth-of-type(${peers.indexOf(node) + 1})`; }
+                  parts.unshift(part); node = parent;
+                }
+                return parts.join(' > ');
+              };
+              const nodes = [...document.querySelectorAll('a,button,input,textarea,select,[role],[contenteditable="true"]')].filter(visible).slice(0, 120);
+              return { title: document.title, url: location.href, elements: nodes.map(el => ({
+                selector: selector(el), tag: el.tagName.toLowerCase(), role: el.getAttribute('role'),
+                label: (el.getAttribute('aria-label') || el.innerText || el.getAttribute('placeholder') || '').trim().slice(0, 240),
+                disabled: !!el.disabled
+              })) };
+            })()"#;
+            let value = evaluate(app, thread_id, expression.into()).await?;
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":value.to_string()}),
+            ])
+        }
+        "click" => {
+            let selector = arguments
+                .get("selector")
+                .and_then(Value::as_str)
+                .ok_or("selector is required")?;
+            let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
+            let expression = format!("(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('Element not found'); el.scrollIntoView({{block:'center'}}); el.click(); return true; }})()");
+            evaluate(app, thread_id, expression).await?;
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Clicked the element."}),
+            ])
+        }
+        "fill" => {
+            let selector = arguments
+                .get("selector")
+                .and_then(Value::as_str)
+                .ok_or("selector is required")?;
+            let value = arguments
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or("value is required")?;
+            let selector = serde_json::to_string(selector).map_err(|error| error.to_string())?;
+            let value = serde_json::to_string(value).map_err(|error| error.to_string())?;
+            let expression = format!("(() => {{ const el = document.querySelector({selector}); if (!el) throw new Error('Element not found'); el.focus(); const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value')?.set; if (setter) setter.call(el, {value}); else el.value = {value}; el.dispatchEvent(new Event('input', {{bubbles:true}})); el.dispatchEvent(new Event('change', {{bubbles:true}})); return true; }})()");
+            evaluate(app, thread_id, expression).await?;
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":"Filled the element. The value was not logged or returned."}),
+            ])
+        }
+        "evaluate" => {
+            let expression = arguments
+                .get("expression")
+                .and_then(Value::as_str)
+                .ok_or("expression is required")?;
+            let value = evaluate(app, thread_id, expression.to_string()).await?;
+            Ok(vec![
+                serde_json::json!({"type":"inputText","text":value.to_string()}),
+            ])
+        }
+        "screenshot" => {
+            ensure_tool_session(app, thread_id.clone()).await?;
+            let png = capture(app, thread_id).await?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(png);
+            Ok(vec![
+                serde_json::json!({"type":"inputImage","imageUrl":format!("data:image/png;base64,{encoded}")}),
+            ])
+        }
+        _ => Err("Unknown internal browser tool".into()),
+    }
+}
+
 /// Called on the main thread after the Tauri run loop exits.
 pub fn shutdown() {
-    let (browser, closing, closed, initialized) = ENGINE.with(|cell| {
+    let (sessions, initialized) = ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
-        (
-            take_browser_for_close(&mut engine),
-            engine.closing,
-            engine.closed.clone(),
-            engine.initialized,
-        )
+        let initialized = engine.initialized;
+        let sessions = engine
+            .sessions
+            .drain()
+            .map(|(_, mut browser_session)| {
+                let browser = prepare_session_close(&mut browser_session);
+                (
+                    browser,
+                    browser_session.closed,
+                    browser_session.ownership.take(),
+                )
+            })
+            .collect::<Vec<_>>();
+        (sessions, initialized)
     });
     if !initialized {
         ENGINE.with(|cell| {
@@ -519,23 +941,28 @@ pub fn shutdown() {
         });
         return;
     }
-    if let Some(browser) = browser {
+    for (browser, _, _) in &sessions {
+        let browser = browser.clone();
         let _ = request_browser_close(browser);
     }
-    if closing {
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while !closed.load(Ordering::SeqCst) && Instant::now() < deadline {
-            objc2::rc::autoreleasepool(|_| cef::do_message_loop_work());
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while sessions
+        .iter()
+        .any(|(_, closed, _)| !closed.load(Ordering::SeqCst))
+        && Instant::now() < deadline
+    {
+        objc2::rc::autoreleasepool(|_| cef::do_message_loop_work());
+    }
+    for (_, _, ownership) in sessions {
+        if let Some(ownership) = ownership {
+            session::release_ownership(ownership);
         }
     }
     ENGINE.with(|cell| {
         let mut engine = cell.borrow_mut();
-        engine.observer.take();
         engine.pump.take();
-        if !closing || closed.load(Ordering::SeqCst) {
-            cef::shutdown();
-            engine.initialized = false;
-        }
+        cef::shutdown();
+        engine.initialized = false;
         // The dynamically registered Cocoa application protocol retains CEF
         // metadata. Leave the framework loaded until the OS tears down the process.
         if let Some(loader) = engine.loader.take() {
@@ -574,20 +1001,26 @@ wrap_client! {
 }
 
 wrap_client! {
-    struct PaneClient { app: AppHandle, closed: Arc<AtomicBool> }
+    struct PaneClient {
+        app: AppHandle,
+        thread_id: String,
+        session_id: String,
+        profile_dir: PathBuf,
+        closed: Arc<AtomicBool>
+    }
     impl Client {
-        fn load_handler(&self) -> Option<LoadHandler> { Some(PaneLoad::new(self.app.clone())) }
-        fn display_handler(&self) -> Option<DisplayHandler> { Some(PaneDisplay::new(self.app.clone())) }
-        fn request_handler(&self) -> Option<RequestHandler> { Some(PaneRequest::new(self.app.clone())) }
+        fn load_handler(&self) -> Option<LoadHandler> { Some(PaneLoad::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
+        fn display_handler(&self) -> Option<DisplayHandler> { Some(PaneDisplay::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
+        fn request_handler(&self) -> Option<RequestHandler> { Some(PaneRequest::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(PaneLife::new(self.closed.clone())) }
     }
 }
 
 wrap_load_handler! {
-    struct PaneLoad { app: AppHandle }
+    struct PaneLoad { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
     impl LoadHandler {
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, _loading: i32, _back: i32, _forward: i32) {
-            if let Some(browser) = browser { emit_page(&self.app, browser, None, None); }
+            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None, None); }
         }
         fn on_load_end(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, _status: i32) {
             if let Some(frame) = frame.filter(|frame| frame.is_main() != 0) {
@@ -601,10 +1034,11 @@ wrap_load_handler! {
                 if native != sys::cef_errorcode_t::ERR_ABORTED {
                     if let Some(url) = failed_url.and_then(|url| parse_url(&url.to_string()).ok()) {
                         let _ = self.app.emit_to("main", "browser-page", serde_json::json!({
+                            "threadId": self.thread_id, "sessionId": self.session_id,
                             "url": url.to_string(), "loading": false,
                             "error": format!("The website could not be loaded ({})", native as i32),
                         }));
-                    } else if let Some(browser) = browser { emit_page(&self.app, browser, None,
+                    } else if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None,
                         Some(format!("The website could not be loaded ({})", native as i32))); }
                 }
             }
@@ -613,22 +1047,22 @@ wrap_load_handler! {
 }
 
 wrap_display_handler! {
-    struct PaneDisplay { app: AppHandle }
+    struct PaneDisplay { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
     impl DisplayHandler {
         fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
-            if let Some(browser) = browser { emit_page(&self.app, browser, title.map(|title| title.to_string()), None); }
+            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, title.map(|title| title.to_string()), None); }
         }
         fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _url: Option<&CefString>) {
             if frame.is_some_and(|frame| frame.is_main() != 0) {
                 disarm(&self.app);
-                if let Some(browser) = browser { emit_page(&self.app, browser, None, None); }
+                if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None, None); }
             }
         }
     }
 }
 
 wrap_request_handler! {
-    struct PaneRequest { app: AppHandle }
+    struct PaneRequest { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
     impl RequestHandler {
         fn on_before_browse(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, request: Option<&mut Request>,
             _gesture: i32, _redirect: i32) -> i32 {
@@ -643,7 +1077,13 @@ wrap_request_handler! {
                                 if let Some(shell) = self.app.get_webview("main") {
                                     let _ = shell.set_focus();
                                 }
-                                let _ = self.app.emit_to("main", "browser-selection", selection);
+                                if let Ok(mut payload) = serde_json::to_value(selection) {
+                                    if let Some(payload) = payload.as_object_mut() {
+                                        payload.insert("threadId".into(), Value::String(self.thread_id.clone()));
+                                        payload.insert("sessionId".into(), Value::String(self.session_id.clone()));
+                                    }
+                                    let _ = self.app.emit_to("main", "browser-selection", payload);
+                                }
                             }
                         }
                     }
@@ -658,8 +1098,10 @@ wrap_request_handler! {
         fn on_render_process_terminated(&self, browser: Option<&mut Browser>, _status: TerminationStatus,
             _code: i32, _message: Option<&CefString>) {
             disarm(&self.app);
-            if let Some(browser) = browser { emit_page(&self.app, browser, None,
-                Some("The Chromium page stopped. Use Reload to reopen it.".into())); }
+            if let Some(browser) = browser {
+                emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None,
+                    Some("The Chromium page stopped. Use Reload to reopen it.".into()));
+            }
         }
     }
 }
@@ -688,10 +1130,10 @@ wrap_dev_tools_message_observer! {
         fn on_dev_tools_method_result(&self, _browser: Option<&mut Browser>, id: i32, success: i32, bytes: Option<&[u8]>) {
             let sender = self.pending.lock().ok().and_then(|mut pending| pending.remove(&id));
             if let Some(sender) = sender {
-                let result = if success == 0 { Err("Chromium could not capture the page".into()) }
+                let result = if success == 0 { Err("Chromium DevTools method failed".into()) }
                     else if let Some(bytes) = bytes.filter(|bytes| bytes.len() <= 43 * 1024 * 1024) {
                         serde_json::from_slice(bytes).map_err(|_| "Invalid screenshot response".into())
-                    } else { Err("Screenshot is too large".into()) };
+                    } else { Err("Chromium DevTools response is too large".into()) };
                 let _ = sender.send(result);
             }
         }

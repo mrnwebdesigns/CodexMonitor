@@ -1507,7 +1507,7 @@ export default function MainApp() {
     typeof gitRootOverride === "string" && gitRootOverride.trim().length > 0;
   const showGitInitBanner =
     Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
-  const browser = useBrowserPanel();
+  const browser = useBrowserPanel(activeThreadId);
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1525,7 +1525,7 @@ export default function MainApp() {
           branch: currentBranch,
           onSaveProjectInfo: (id, projectInfo) => updateWorkspaceSettings(id, { projectInfo }),
           timeThreadsByWorkspace: threadsByWorkspace,
-          onOpenWebsite: !isCompact ? (url) => browser.openWebsite(activeWorkspace.id, url) : undefined,
+          onOpenWebsite: !isCompact && activeThreadId ? (url) => browser.openWebsite(activeWorkspace.id, activeThreadId, url) : undefined,
           showGitInitBanner,
           initGitRepoLoading,
           onInitGitRepo: modalActions.openInitGitRepoPrompt,
@@ -1899,7 +1899,7 @@ export default function MainApp() {
     },
   });
 
-  const browserAvailable = !isCompact && Boolean(activeWorkspace) && !showHome;
+  const browserAvailable = !isCompact && Boolean(activeWorkspace) && Boolean(activeThreadId) && !showHome;
   const browserObscured = Boolean(appModalsProps.settingsOpen || appModalsProps.renamePrompt || appModalsProps.initGitRepoPrompt || appModalsProps.worktreePrompt || appModalsProps.clonePrompt || appModalsProps.workspaceFromUrlPrompt || appModalsProps.mobileRemoteWorkspacePathPrompt || appModalsProps.branchSwitcher);
   return <MainAppShell {...mainAppShellProps}
     browserToggleNode={browserAvailable ? (
@@ -1917,15 +1917,16 @@ export default function MainApp() {
         <AppWindow size={14} aria-hidden />
       </button>
     ) : undefined}
-    browserPanelNode={browserAvailable && browser.open && activeWorkspace ? <BrowserPanel
+    browserPanelNode={browserAvailable && browser.open && activeWorkspace && activeThreadId ? <BrowserPanel
       workspaceId={activeWorkspace.id}
-      navigationRequest={browser.navigationRequest?.workspaceId === activeWorkspace.id ? browser.navigationRequest : null}
+      threadId={activeThreadId}
+      navigationRequest={browser.navigationRequest?.workspaceId === activeWorkspace.id && browser.navigationRequest.threadId === activeThreadId ? browser.navigationRequest : null}
       onNavigationHandled={browser.clearNavigationRequest}
-      annotations={browser.annotationsByWorkspace[activeWorkspace.id] || []}
+      annotations={browser.annotationsByThread[activeThreadId] || []}
       visible={!browserObscured}
       canInsert={composerWorkspaceState.canInsertComposerText}
-      onAddAnnotation={(annotation) => browser.addAnnotation(activeWorkspace.id, annotation)}
-      onRemoveAnnotation={(id) => browser.removeAnnotation(activeWorkspace.id, id)}
+      onAddAnnotation={(annotation) => browser.addAnnotation(activeThreadId, annotation)}
+      onRemoveAnnotation={(id) => browser.removeAnnotation(activeThreadId, id)}
       onInsert={(text, screenshots) => {
         composerWorkspaceState.handleInsertComposerText(text);
         composerWorkspaceState.attachImages(screenshots);

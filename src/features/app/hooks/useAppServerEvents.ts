@@ -6,6 +6,11 @@ import type {
 } from "../../../types";
 import { subscribeAppServerEvents } from "../../../services/events";
 import {
+  browserClose,
+  browserToolCall,
+  respondToDynamicToolCall,
+} from "../../../services/tauri";
+import {
   getAppServerParams,
   getAppServerRawMethod,
   getAppServerRequestId,
@@ -107,6 +112,11 @@ type AppServerEventHandlers = {
   ) => void;
 };
 
+// Several independent feature hooks subscribe to the shared app-server event
+// stream. A server request must still be executed and answered exactly once.
+const activeDynamicToolRequests = new Set<string>();
+const activeBrowserClosures = new Set<string>();
+
 export const METHODS_ROUTED_IN_USE_APP_SERVER_EVENTS = [
   "account/login/completed",
   "account/rateLimits/updated",
@@ -177,7 +187,6 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
   useEffect(() => {
     const unlisten = subscribeAppServerEvents((payload) => {
       const currentHandlers = handlersRef.current;
-      currentHandlers.onAppServerEvent?.(payload);
 
       const { workspace_id } = payload;
       const method = getAppServerRawMethod(payload);
@@ -185,6 +194,47 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
         return;
       }
       const params = getAppServerParams(payload);
+
+      if (method === "item/tool/call" && params.namespace === "internal_browser") {
+        const requestId = getAppServerRequestId(payload);
+        const threadId = String(params.threadId ?? params.thread_id ?? "").trim();
+        const tool = String(params.tool ?? "").trim();
+        const args = params.arguments ?? {};
+        if (requestId !== null && threadId && tool) {
+          const requestKey = `${workspace_id}:${typeof requestId}:${String(requestId)}`;
+          if (activeDynamicToolRequests.has(requestKey)) {
+            return;
+          }
+          activeDynamicToolRequests.add(requestKey);
+          void browserToolCall(threadId, tool, args)
+            .then((contentItems) => respondToDynamicToolCall(workspace_id, requestId, {
+              success: true,
+              contentItems,
+            }))
+            .catch((reason) => respondToDynamicToolCall(workspace_id, requestId, {
+              success: false,
+              contentItems: [{
+                type: "inputText",
+                text: reason instanceof Error ? reason.message : String(reason),
+              }],
+            }))
+            .catch(() => undefined)
+            .finally(() => activeDynamicToolRequests.delete(requestKey));
+        }
+        return;
+      }
+
+      if (method === "thread/archived" || method === "thread/closed") {
+        const threadId = String(params.threadId ?? params.thread_id ?? "").trim();
+        if (threadId && !activeBrowserClosures.has(threadId)) {
+          activeBrowserClosures.add(threadId);
+          void browserClose(threadId)
+            .catch(() => undefined)
+            .finally(() => activeBrowserClosures.delete(threadId));
+        }
+      }
+
+      currentHandlers.onAppServerEvent?.(payload);
 
       if (method === "codex/connected") {
         currentHandlers.onWorkspaceConnected?.(workspace_id);

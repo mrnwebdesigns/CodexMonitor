@@ -3,8 +3,13 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 #[cfg(not(chromium_browser))]
+use tauri::Emitter;
+#[cfg(not(chromium_browser))]
 use tauri::WebviewUrl;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+
+#[cfg(any(chromium_browser, test))]
+pub(crate) mod session;
 
 #[cfg(chromium_browser)]
 pub(crate) mod chromium;
@@ -46,6 +51,7 @@ fn valid_device(device: Option<BrowserDeviceViewport>) -> bool {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BrowserSelection {
     url: String,
     title: String,
@@ -119,11 +125,18 @@ fn check_owner(webview: &tauri::Webview) -> Result<(), String> {
     Ok(())
 }
 
-fn page_event(app: &AppHandle, url: &tauri::Url, loading: bool, title: Option<String>) {
+#[cfg(not(chromium_browser))]
+fn page_event(
+    app: &AppHandle,
+    thread_id: &str,
+    url: &tauri::Url,
+    loading: bool,
+    title: Option<String>,
+) {
     let _ = app.emit_to(
         "main",
         "browser-page",
-        serde_json::json!({"url":url.as_str(),"loading":loading,"title":title}),
+        serde_json::json!({"threadId":thread_id,"url":url.as_str(),"loading":loading,"title":title}),
     );
 }
 
@@ -133,6 +146,7 @@ pub async fn browser_navigate(
     app: AppHandle,
     webview: tauri::Webview,
     url: String,
+    thread_id: String,
     bounds: BrowserBounds,
 ) -> Result<(), String> {
     check_owner(&webview)?;
@@ -146,9 +160,12 @@ pub async fn browser_navigate(
         return Ok(());
     }
     let navigation_app = app.clone();
+    let selection_thread_id = thread_id.clone();
     let load_app = app.clone();
     let title_app = app.clone();
     let popup_app = app.clone();
+    let load_thread_id = thread_id.clone();
+    let title_thread_id = thread_id.clone();
     let builder = tauri::webview::WebviewBuilder::new(LABEL, WebviewUrl::External(url))
         .disable_drag_drop_handler()
         .initialization_script(SCRIPT)
@@ -160,7 +177,15 @@ pub async fn browser_navigate(
                     .swap(false, std::sync::atomic::Ordering::SeqCst)
                 {
                     if let Some(selection) = parse_selection(url) {
-                        let _ = navigation_app.emit_to("main", "browser-selection", selection);
+                        if let Ok(mut payload) = serde_json::to_value(selection) {
+                            if let Some(payload) = payload.as_object_mut() {
+                                payload.insert(
+                                    "threadId".into(),
+                                    serde_json::Value::String(selection_thread_id.clone()),
+                                );
+                            }
+                            let _ = navigation_app.emit_to("main", "browser-selection", payload);
+                        }
                     }
                 }
                 return false;
@@ -173,14 +198,14 @@ pub async fn browser_navigate(
                 .state::<BrowserState>()
                 .annotation_armed
                 .store(false, std::sync::atomic::Ordering::SeqCst);
-            page_event(&load_app, payload.url(), loading, None);
+            page_event(&load_app, &load_thread_id, payload.url(), loading, None);
             if !loading {
                 let _ = browser.eval(SCRIPT);
             }
         })
         .on_document_title_changed(move |browser, title| {
             if let Ok(url) = browser.url() {
-                page_event(&title_app, &url, false, Some(title));
+                page_event(&title_app, &title_thread_id, &url, false, Some(title));
             }
         })
         .on_new_window(move |url, _| {
@@ -207,6 +232,7 @@ pub async fn browser_navigate(
 pub async fn browser_get_url(
     app: AppHandle,
     webview: tauri::Webview,
+    _thread_id: String,
 ) -> Result<Option<String>, String> {
     check_owner(&webview)?;
     app.get_webview(LABEL)
@@ -223,19 +249,24 @@ pub async fn browser_get_url(
 pub async fn browser_close(
     app: AppHandle,
     webview: tauri::Webview,
+    thread_id: String,
 ) -> Result<Option<String>, String> {
     check_owner(&webview)?;
     #[cfg(chromium_browser)]
-    return chromium::close(&app).await;
+    return chromium::close(&app, thread_id).await;
     #[cfg(not(chromium_browser))]
     {
+        let _ = &thread_id;
         app.state::<BrowserState>()
             .annotation_armed
             .store(false, std::sync::atomic::Ordering::SeqCst);
         let Some(browser) = app.get_webview(LABEL) else {
             return Ok(None);
         };
-        let url = browser.url().ok().and_then(|url| parse_url(url.as_str()).ok());
+        let url = browser
+            .url()
+            .ok()
+            .and_then(|url| parse_url(url.as_str()).ok());
         browser.close().map_err(|error| error.to_string())?;
         Ok(url.map(|url| url.to_string()))
     }
@@ -247,6 +278,7 @@ pub async fn browser_set_bounds(
     app: AppHandle,
     webview: tauri::Webview,
     bounds: BrowserBounds,
+    _thread_id: String,
 ) -> Result<(), String> {
     check_owner(&webview)?;
     if !valid_bounds(&bounds) {
@@ -269,6 +301,7 @@ pub async fn browser_set_visible(
     app: AppHandle,
     webview: tauri::Webview,
     visible: bool,
+    _thread_id: String,
 ) -> Result<(), String> {
     check_owner(&webview)?;
     if !visible {
@@ -293,6 +326,7 @@ pub async fn browser_action(
     app: AppHandle,
     webview: tauri::Webview,
     action: String,
+    _thread_id: String,
 ) -> Result<(), String> {
     check_owner(&webview)?;
     let script = match action.as_str() {
@@ -314,12 +348,12 @@ pub async fn browser_action(
 }
 
 #[cfg(chromium_browser)]
-async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
-    chromium::capture(app).await
+async fn capture(app: &AppHandle, thread_id: String) -> Result<Vec<u8>, String> {
+    chromium::capture(app, thread_id).await
 }
 
 #[cfg(all(target_os = "macos", not(chromium_browser)))]
-async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
+async fn capture(app: &AppHandle, _thread_id: String) -> Result<Vec<u8>, String> {
     use objc2::{msg_send, runtime::AnyObject};
     use objc2_app_kit::{NSBitmapImageFileType, NSBitmapImageRep, NSImage};
     use objc2_foundation::NSDictionary;
@@ -352,14 +386,18 @@ async fn capture(app: &AppHandle) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-async fn capture(_app: &AppHandle) -> Result<Vec<u8>, String> {
+async fn capture(_app: &AppHandle, _thread_id: String) -> Result<Vec<u8>, String> {
     Err("Native screenshots are currently available on macOS".into())
 }
 
 #[tauri::command]
-pub async fn browser_capture(app: AppHandle, webview: tauri::Webview) -> Result<String, String> {
+pub async fn browser_capture(
+    app: AppHandle,
+    webview: tauri::Webview,
+    thread_id: String,
+) -> Result<String, String> {
     check_owner(&webview)?;
-    let png = capture(&app).await?;
+    let png = capture(&app, thread_id).await?;
     let directory = capture_directory(&app)?.join("pending");
     tokio::fs::create_dir_all(&directory)
         .await
@@ -422,7 +460,10 @@ pub async fn reap_pending_captures(app: AppHandle) {
     };
     while let Ok(Some(entry)) = entries.next_entry().await {
         let path = entry.path();
-        let is_stale = entry.metadata().await.ok()
+        let is_stale = entry
+            .metadata()
+            .await
+            .ok()
             .and_then(|metadata| metadata.modified().ok())
             .and_then(|modified| modified.elapsed().ok())
             .is_some_and(|age| age.as_secs() >= 24 * 60 * 60);
@@ -449,7 +490,11 @@ pub async fn browser_runtime_info(webview: tauri::Webview) -> Result<BrowserRunt
     });
     #[cfg(not(chromium_browser))]
     Ok(BrowserRuntimeInfo {
-        engine: if cfg!(target_os = "macos") { "WebKit" } else { "System WebView" },
+        engine: if cfg!(target_os = "macos") {
+            "WebKit"
+        } else {
+            "System WebView"
+        },
         version: String::new(),
     })
 }
@@ -460,6 +505,7 @@ pub async fn browser_navigate(
     app: AppHandle,
     webview: tauri::Webview,
     url: String,
+    thread_id: String,
     bounds: BrowserBounds,
     device: Option<BrowserDeviceViewport>,
 ) -> Result<(), String> {
@@ -471,7 +517,7 @@ pub async fn browser_navigate(
     if !valid_device(device) {
         return Err("Invalid device viewport".into());
     }
-    chromium::navigate(&app, url, bounds, device).await
+    chromium::navigate(&app, thread_id, url, bounds, device).await
 }
 
 #[cfg(chromium_browser)]
@@ -479,9 +525,10 @@ pub async fn browser_navigate(
 pub async fn browser_get_url(
     app: AppHandle,
     webview: tauri::Webview,
+    thread_id: String,
 ) -> Result<Option<String>, String> {
     check_owner(&webview)?;
-    chromium::get_url(&app).await
+    chromium::get_url(&app, thread_id).await
 }
 
 #[cfg(chromium_browser)]
@@ -490,6 +537,7 @@ pub async fn browser_set_bounds(
     app: AppHandle,
     webview: tauri::Webview,
     bounds: BrowserBounds,
+    thread_id: String,
     device: Option<BrowserDeviceViewport>,
 ) -> Result<(), String> {
     check_owner(&webview)?;
@@ -499,7 +547,7 @@ pub async fn browser_set_bounds(
     if !valid_device(device) {
         return Err("Invalid device viewport".into());
     }
-    chromium::set_bounds(&app, bounds, device).await
+    chromium::set_bounds(&app, thread_id, bounds, device).await
 }
 
 #[cfg(chromium_browser)]
@@ -508,6 +556,7 @@ pub async fn browser_set_visible(
     app: AppHandle,
     webview: tauri::Webview,
     visible: bool,
+    thread_id: String,
 ) -> Result<(), String> {
     check_owner(&webview)?;
     if !visible {
@@ -515,7 +564,7 @@ pub async fn browser_set_visible(
             .annotation_armed
             .store(false, std::sync::atomic::Ordering::SeqCst);
     }
-    chromium::set_visible(&app, visible).await
+    chromium::set_visible(&app, thread_id, visible).await
 }
 
 #[cfg(chromium_browser)]
@@ -524,9 +573,28 @@ pub async fn browser_action(
     app: AppHandle,
     webview: tauri::Webview,
     action: String,
+    thread_id: String,
 ) -> Result<(), String> {
     check_owner(&webview)?;
-    chromium::action(&app, action).await
+    chromium::action(&app, thread_id, action).await
+}
+
+#[tauri::command]
+pub async fn browser_tool_call(
+    app: AppHandle,
+    webview: tauri::Webview,
+    thread_id: String,
+    tool: String,
+    arguments: serde_json::Value,
+) -> Result<Vec<serde_json::Value>, String> {
+    check_owner(&webview)?;
+    #[cfg(chromium_browser)]
+    return chromium::tool_call(&app, thread_id, tool, arguments).await;
+    #[cfg(not(chromium_browser))]
+    {
+        let _ = (app, thread_id, tool, arguments);
+        Err("Agent-controlled internal browser tools require the Chromium build".into())
+    }
 }
 
 #[cfg(test)]
@@ -536,7 +604,10 @@ mod tests {
     fn capture_finalization_is_limited_to_app_staged_pngs() {
         let directory = Path::new("/app/browser-captures/pending");
         let name = "f744e8fa-a1e6-42d1-ad7b-1dc58f024470.png";
-        assert_eq!(pending_capture_name(directory, &directory.join(name)), Some(name));
+        assert_eq!(
+            pending_capture_name(directory, &directory.join(name)),
+            Some(name)
+        );
         assert!(pending_capture_name(directory, &directory.parent().unwrap().join(name)).is_none());
         assert!(pending_capture_name(directory, &directory.join("not-a-capture.png")).is_none());
         assert!(pending_capture_name(directory, &directory.join("nested").join(name)).is_none());
