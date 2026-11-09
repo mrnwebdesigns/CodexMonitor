@@ -257,11 +257,87 @@ pub(crate) async fn start_thread_core(
     let workspace_path = resolve_workspace_path_core(workspaces, &workspace_id).await?;
     let params = json!({
         "cwd": workspace_path,
-        "approvalPolicy": "on-request"
+        "approvalPolicy": "on-request",
+        "dynamicTools": internal_browser_dynamic_tools()
     });
     session
         .send_request_for_workspace(&workspace_id, "thread/start", params)
         .await
+}
+
+fn internal_browser_dynamic_tools() -> Value {
+    json!([{
+        "type": "namespace",
+        "name": "internal_browser",
+        "description": "Control the browser visibly embedded in the current Codex Monitor thread. Use this for 'internal browser', 'open in Codex', authenticated browser UI, and similar requests. Never substitute personal Chrome or chrome-devtools-mcp unless the user explicitly requests an external browser.",
+        "tools": [
+            {
+                "type": "function",
+                "name": "open",
+                "description": "Open an HTTP(S) URL in this thread's visible internal browser. Reuses the thread's isolated persistent profile.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": { "url": { "type": "string" } },
+                    "required": ["url"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "type": "function",
+                "name": "tabs",
+                "description": "List the exact tabs/pages belonging to this thread's visible internal browser session.",
+                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+            },
+            {
+                "type": "function",
+                "name": "snapshot",
+                "description": "Return a compact accessibility-oriented snapshot of the current visible page, including element selectors usable by click and fill.",
+                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+            },
+            {
+                "type": "function",
+                "name": "click",
+                "description": "Click the first visible element matching a CSS selector in this thread's current page.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": { "selector": { "type": "string" } },
+                    "required": ["selector"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "type": "function",
+                "name": "fill",
+                "description": "Replace the value of an input or textarea matching a CSS selector and dispatch input/change events.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "selector": { "type": "string" },
+                        "value": { "type": "string" }
+                    },
+                    "required": ["selector", "value"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "type": "function",
+                "name": "evaluate",
+                "description": "Evaluate JavaScript in the current page and return a JSON-serializable result. Do not use it to retrieve cookies, credentials, authorization data, or form secrets.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": { "expression": { "type": "string" } },
+                    "required": ["expression"],
+                    "additionalProperties": false
+                }
+            },
+            {
+                "type": "function",
+                "name": "screenshot",
+                "description": "Capture the current visible page from this thread's internal browser.",
+                "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+            }
+        ]
+    }])
 }
 
 pub(crate) async fn resume_thread_core(
@@ -1029,5 +1105,20 @@ mod tests {
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentReview"));
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentCompact"));
         assert!(THREAD_LIST_SOURCE_KINDS.contains(&"subAgentThreadSpawn"));
+    }
+
+    #[test]
+    fn internal_browser_tools_are_one_thread_scoped_namespace_without_profile_arguments() {
+        let tools = internal_browser_dynamic_tools();
+        let namespace = tools.as_array().and_then(|items| items.first()).unwrap();
+        assert_eq!(namespace.get("name"), Some(&json!("internal_browser")));
+        let names = namespace["tools"].as_array().unwrap().iter()
+            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["open", "tabs", "snapshot", "click", "fill", "evaluate", "screenshot"]);
+        for tool in namespace["tools"].as_array().unwrap() {
+            assert!(tool["inputSchema"]["properties"].get("profile").is_none());
+            assert!(tool["inputSchema"]["properties"].get("turnId").is_none());
+        }
     }
 }

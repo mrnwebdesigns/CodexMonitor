@@ -5,6 +5,7 @@ import type {
   RequestUserInputRequest,
 } from "../../../types";
 import { subscribeAppServerEvents } from "../../../services/events";
+import { browserToolCall, respondToDynamicToolCall } from "../../../services/tauri";
 import {
   getAppServerParams,
   getAppServerRawMethod,
@@ -177,7 +178,6 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
   useEffect(() => {
     const unlisten = subscribeAppServerEvents((payload) => {
       const currentHandlers = handlersRef.current;
-      currentHandlers.onAppServerEvent?.(payload);
 
       const { workspace_id } = payload;
       const method = getAppServerRawMethod(payload);
@@ -185,6 +185,30 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
         return;
       }
       const params = getAppServerParams(payload);
+
+      if (method === "item/tool/call" && params.namespace === "internal_browser") {
+        const requestId = getAppServerRequestId(payload);
+        const threadId = String(params.threadId ?? params.thread_id ?? "").trim();
+        const tool = String(params.tool ?? "").trim();
+        const args = params.arguments ?? {};
+        if (requestId !== null && threadId && tool) {
+          void browserToolCall(threadId, tool, args)
+            .then((contentItems) => respondToDynamicToolCall(workspace_id, requestId, {
+              success: true,
+              contentItems,
+            }))
+            .catch((reason) => respondToDynamicToolCall(workspace_id, requestId, {
+              success: false,
+              contentItems: [{
+                type: "input_text",
+                text: reason instanceof Error ? reason.message : String(reason),
+              }],
+            }));
+        }
+        return;
+      }
+
+      currentHandlers.onAppServerEvent?.(payload);
 
       if (method === "codex/connected") {
         currentHandlers.onWorkspaceConnected?.(workspace_id);

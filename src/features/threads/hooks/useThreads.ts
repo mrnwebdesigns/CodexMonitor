@@ -6,6 +6,7 @@ import type {
   DebugEntry,
   ServiceTier,
   ThreadListSortKey,
+  UsageGovernorSettings,
   WorkspaceInfo,
 } from "@/types";
 import { CHAT_SCROLLBACK_DEFAULT } from "@utils/chatScrollback";
@@ -41,6 +42,7 @@ import {
   extractThreadFromResponse,
 } from "@threads/utils/threadSummary";
 import { getSubagentDescendantThreadIds } from "@threads/utils/subagentTree";
+import { DEFAULT_USAGE_GOVERNOR_SETTINGS } from "@/features/usage/usageGovernor";
 
 type UseThreadsOptions = {
   activeWorkspace: WorkspaceInfo | null;
@@ -68,6 +70,7 @@ type UseThreadsOptions = {
     threadId: string,
     metadata: { modelId: string | null; effort: string | null },
   ) => void;
+  usageGovernor?: UsageGovernorSettings;
 };
 
 function buildWorkspaceThreadKey(workspaceId: string, threadId: string) {
@@ -95,6 +98,7 @@ export function useThreads({
   onMessageActivity,
   threadSortKey = "updated_at",
   onThreadCodexMetadataDetected,
+  usageGovernor = { ...DEFAULT_USAGE_GOVERNOR_SETTINGS, mode: "off" },
 }: UseThreadsOptions) {
   const maxItemsPerThread =
     chatHistoryScrollbackItems === undefined
@@ -750,6 +754,10 @@ export function useThreads({
     interruptTurn,
     sendUserMessage,
     sendUserMessageToThread,
+    usageGovernorSnapshot,
+    usageGovernorQueue,
+    cancelUsageGovernorQueueItem,
+    runUsageGovernorQueueItemNow,
     startFork,
     startReview,
     startUncommittedReview,
@@ -796,6 +804,13 @@ export function useThreads({
     threadStatusById: state.threadStatusById,
     activeTurnIdByThread: state.activeTurnIdByThread,
     rateLimitsByWorkspace: state.rateLimitsByWorkspace,
+    tokenUsageByThread: state.tokenUsageByThread,
+    workspaceIdByThread: Object.fromEntries(
+      Object.entries(state.threadsByWorkspace).flatMap(([workspaceId, threads]) =>
+        threads.map((thread) => [thread.id, workspaceId]),
+      ),
+    ),
+    usageGovernor,
     pendingInterruptsRef,
     dispatch,
     getCustomName,
@@ -948,6 +963,10 @@ export function useThreads({
     loadOlderThreadsForWorkspace,
     sendUserMessage,
     sendUserMessageToThread,
+    usageGovernorSnapshot,
+    usageGovernorQueue,
+    cancelUsageGovernorQueueItem,
+    runUsageGovernorQueueItemNow,
     startFork,
     startReview,
     startUncommittedReview,

@@ -6,9 +6,15 @@ import type { AppServerEvent } from "../../../types";
 import { subscribeAppServerEvents } from "../../../services/events";
 import { useAppServerEvents } from "./useAppServerEvents";
 
+const native = vi.hoisted(() => ({
+  browserToolCall: vi.fn(),
+  respondToDynamicToolCall: vi.fn(),
+}));
+
 vi.mock("../../../services/events", () => ({
   subscribeAppServerEvents: vi.fn(),
 }));
+vi.mock("../../../services/tauri", () => native);
 
 type Handlers = Parameters<typeof useAppServerEvents>[0];
 
@@ -43,6 +49,43 @@ async function mount(handlers: Handlers) {
 }
 
 describe("useAppServerEvents", () => {
+  it("routes an internal browser tool call by stable thread ID and does not expose secret arguments to generic event handlers", async () => {
+    native.browserToolCall.mockResolvedValueOnce([{ type: "input_text", text: "ok" }]);
+    native.respondToDynamicToolCall.mockResolvedValueOnce(undefined);
+    const handlers: Handlers = { onAppServerEvent: vi.fn() };
+    const { root } = await mount(handlers);
+
+    await act(async () => {
+      listener?.({
+        workspace_id: "ws-1",
+        message: {
+          id: 91,
+          method: "item/tool/call",
+          params: {
+            namespace: "internal_browser",
+            threadId: "thread-one",
+            turnId: "turn-two",
+            tool: "fill",
+            arguments: { selector: "#password", value: "not-for-logs" },
+          },
+        },
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(native.browserToolCall).toHaveBeenCalledWith("thread-one", "fill", {
+      selector: "#password",
+      value: "not-for-logs",
+    });
+    expect(native.respondToDynamicToolCall).toHaveBeenCalledWith("ws-1", 91, {
+      success: true,
+      contentItems: [{ type: "input_text", text: "ok" }],
+    });
+    expect(handlers.onAppServerEvent).not.toHaveBeenCalled();
+    await act(async () => root.unmount());
+  });
+
   it("routes app-server events to handlers", async () => {
     const handlers: Handlers = {
       onAppServerEvent: vi.fn(),

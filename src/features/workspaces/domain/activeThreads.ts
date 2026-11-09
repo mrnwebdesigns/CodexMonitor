@@ -11,7 +11,7 @@ export type ActiveThread = {
   projectName: string;
   thread: ThreadSummary;
   updatedAt: number;
-  status: "Running" | "Reviewing" | "Recent";
+  status: "Running" | "Waiting" | "Reviewing" | "Recent";
   hasUnread: boolean;
 };
 
@@ -24,6 +24,7 @@ export function buildActiveThreads(
   threadsByWorkspace: Record<string, ThreadSummary[]>,
   statuses: ThreadStatusById,
   isThreadHidden?: (workspaceId: string, threadId: string) => boolean,
+  pendingUserInputKeys?: Set<string>,
 ): ActiveThread[] {
   const byId = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
   const visibleProjects = new Map(projects.map((project) => [project.id, project]));
@@ -42,7 +43,13 @@ export function buildActiveThreads(
         projectName: project.name,
         thread,
         updatedAt: Number.isFinite(timestamp) ? Math.max(0, timestamp) : 0,
-        status: flags?.isProcessing ? "Running" : flags?.isReviewing ? "Reviewing" : "Recent",
+        status: pendingUserInputKeys?.has(`${workspace.id}:${thread.id}`)
+          ? "Waiting"
+          : flags?.isProcessing
+            ? "Running"
+            : flags?.isReviewing
+              ? "Reviewing"
+              : "Recent",
         hasUnread: flags?.hasUnread ?? false,
       };
       // Imported histories can list the same chat in a parent and a worktree.
@@ -63,6 +70,7 @@ export function getActiveThreads(
   now: number,
   removedThreads: Map<string, number>,
   removedProjects: Map<string, number>,
+  retainedThreadKeys: ReadonlySet<string> = new Set(),
 ): ActiveThread[] {
   const eligible = rows.filter((row) => {
     const removedAt = removedThreads.get(activeThreadKey(row.workspaceId, row.thread.id));
@@ -74,7 +82,14 @@ export function getActiveThreads(
     b.updatedAt - a.updatedAt || a.thread.name.localeCompare(b.thread.name) ||
     activeThreadKey(a.workspaceId, a.thread.id).localeCompare(activeThreadKey(b.workspaceId, b.thread.id));
   const running = eligible.filter((row) => row.status !== "Recent").sort(byRecency);
-  const recent = eligible.filter((row) => row.status === "Recent" && row.updatedAt > 0 &&
+  const recentRows = eligible.filter((row) => row.status === "Recent");
+  const retained = recentRows.filter((row) => retainedThreadKeys.has(activeThreadKey(row.workspaceId, row.thread.id)));
+  const retainedKeys = new Set(retained.map((row) => activeThreadKey(row.workspaceId, row.thread.id)));
+  const currentRecent = recentRows.filter((row) => row.updatedAt > 0 &&
     row.updatedAt >= now - ACTIVE_THREAD_WINDOW_MS).sort(byRecency).slice(0, RECENT_THREAD_LIMIT);
+  const recent = [
+    ...retained,
+    ...currentRecent.filter((row) => !retainedKeys.has(activeThreadKey(row.workspaceId, row.thread.id))),
+  ].sort(byRecency);
   return [...running, ...recent];
 }

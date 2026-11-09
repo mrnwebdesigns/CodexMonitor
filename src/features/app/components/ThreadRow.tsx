@@ -1,7 +1,11 @@
 import type { CSSProperties, MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
-import { getThreadStatusClass, type ThreadStatusById } from "../../../utils/threadStatus";
+import {
+  getThreadActivityState,
+  getThreadStatusClass,
+  type ThreadStatusById,
+} from "../../../utils/threadStatus";
 
 function hashString(value: string) {
   let hash = 0;
@@ -101,10 +105,14 @@ export function ThreadRow({
   const hasPendingUserInput = Boolean(
     pendingUserInputKeys?.has(`${workspaceId}:${thread.id}`),
   );
-  const statusClass = getThreadStatusClass(
-    threadStatusById[thread.id],
-    hasPendingUserInput,
-  );
+  const threadStatus = threadStatusById[thread.id];
+  const statusClass = getThreadStatusClass(threadStatus, hasPendingUserInput);
+  const activityState = getThreadActivityState(threadStatus, hasPendingUserInput);
+  const activityLabel = activityState === "running"
+    ? "Running"
+    : activityState === "waiting"
+      ? "Waiting for input"
+      : "Not running";
   const statusLabel =
     statusClass === "reviewing"
       ? "Reviewing"
@@ -163,7 +171,12 @@ export function ThreadRow({
         }
       }}
     >
-      <span className={`thread-status ${statusClass}`} aria-hidden />
+      <span
+        className={`thread-status ${statusClass} is-${activityState}`}
+        aria-label={activityLabel}
+        role="img"
+        title={activityLabel}
+      />
       <div className="thread-content">
         <div className="thread-headline">
           <span className="thread-name">{thread.name}</span>

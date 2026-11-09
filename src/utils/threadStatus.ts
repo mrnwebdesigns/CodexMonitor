@@ -7,6 +7,20 @@ export type ThreadStatusFlags = {
 export type ThreadStatusById = Record<string, ThreadStatusFlags>;
 
 export type ThreadStatusClass = "processing" | "reviewing" | "unread" | "ready";
+export type ThreadActivityState = "running" | "waiting" | "idle";
+
+export function getThreadActivityState(
+  status: ThreadStatusFlags | undefined,
+  hasPendingUserInput: boolean,
+): ThreadActivityState {
+  if (hasPendingUserInput) {
+    return "waiting";
+  }
+  if (status?.isProcessing) {
+    return "running";
+  }
+  return "idle";
+}
 
 export function getThreadStatusClass(
   status: ThreadStatusFlags | undefined,

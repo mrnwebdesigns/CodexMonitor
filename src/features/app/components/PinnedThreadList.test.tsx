@@ -96,6 +96,8 @@ describe("PinnedThreadList", () => {
 
     const secondRow = screen.getByText("Pinned Beta").closest(".thread-row");
     expect(secondRow).toBeTruthy();
+    expect(secondRow?.querySelector(".thread-status")?.className).toContain("is-running");
+    expect(secondRow?.querySelector(".thread-status")?.getAttribute("aria-label")).toBe("Running");
     if (!secondRow) {
       throw new Error("Missing second pinned row");
     }
@@ -112,7 +114,7 @@ describe("PinnedThreadList", () => {
     );
   });
 
-  it("shows blue unread-style status when a pinned thread is waiting for user input", () => {
+  it("shows waiting status when a pinned thread needs user input", () => {
     const { container } = render(
       <PinnedThreadList
         {...baseProps}
@@ -130,6 +132,8 @@ describe("PinnedThreadList", () => {
     expect(row?.querySelector(".thread-name")?.textContent).toBe("Pinned Beta");
     expect(row?.querySelector(".thread-status")?.className).toContain("unread");
     expect(row?.querySelector(".thread-status")?.className).not.toContain("processing");
+    expect(row?.querySelector(".thread-status")?.className).toContain("is-waiting");
+    expect(row?.querySelector(".thread-status")?.getAttribute("aria-label")).toBe("Waiting for input");
   });
 
   it("toggles descendant visibility for pinned rows with sub-agents", () => {

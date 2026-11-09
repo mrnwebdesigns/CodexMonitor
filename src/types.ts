@@ -237,7 +237,40 @@ export type PersonalityPreference = "friendly" | "pragmatic";
 export type FollowUpMessageBehavior = "queue" | "steer";
 export type ComposerSendIntent = "default" | "queue" | "steer";
 export type SendMessageResult = {
-  status: "sent" | "blocked" | "steer_failed";
+  status: "sent" | "queued" | "blocked" | "steer_failed";
+  queueId?: string;
+  queuePosition?: number;
+};
+
+export type UsageGovernorMode = "off" | "adaptive";
+
+export type UsageGovernorSettings = {
+  mode: UsageGovernorMode;
+  maxConcurrentTurns: number;
+  weeklyReservePercent: number;
+  autoCompactEnabled: boolean;
+  compactContextPercent: number;
+  autoInterruptRunaways: boolean;
+  runawayTokenBudget: number;
+  runawayMinutes: number;
+};
+
+export type UsageGovernorQueueItem = {
+  id: string;
+  workspaceId: string;
+  threadId: string;
+  createdAt: number;
+  position: number;
+};
+
+export type UsageGovernorSnapshot = {
+  state: "off" | "normal" | "throttled" | "critical";
+  usedPercent: number | null;
+  resetsAt: number | null;
+  projectedExhaustionAt: number | null;
+  activeTurns: number;
+  effectiveConcurrency: number;
+  queuedTurns: number;
 };
 
 export type ComposerEditorPreset = "default" | "helpful" | "smart";
@@ -317,6 +350,7 @@ export type AppSettings = {
   followUpMessageBehavior: FollowUpMessageBehavior;
   composerFollowUpHintEnabled: boolean;
   pauseQueuedMessagesWhenResponseRequired: boolean;
+  usageGovernor: UsageGovernorSettings;
   unifiedExecEnabled: boolean;
   experimentalAppsEnabled: boolean;
   personality: PersonalityPreference;

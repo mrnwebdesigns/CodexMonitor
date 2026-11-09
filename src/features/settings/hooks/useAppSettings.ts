@@ -188,6 +188,16 @@ function buildDefaultSettings(): AppSettings {
     followUpMessageBehavior: "queue",
     composerFollowUpHintEnabled: true,
     pauseQueuedMessagesWhenResponseRequired: true,
+    usageGovernor: {
+      mode: "adaptive",
+      maxConcurrentTurns: 2,
+      weeklyReservePercent: 10,
+      autoCompactEnabled: true,
+      compactContextPercent: 60,
+      autoInterruptRunaways: true,
+      runawayTokenBudget: 5_000_000,
+      runawayMinutes: 30,
+    },
     unifiedExecEnabled: true,
     experimentalAppsEnabled: false,
     personality: "friendly",
@@ -242,6 +252,31 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   );
   return {
     ...settings,
+    usageGovernor: {
+      mode: settings.usageGovernor?.mode === "off" ? "off" : "adaptive",
+      maxConcurrentTurns: Math.min(
+        8,
+        Math.max(1, Math.round(settings.usageGovernor?.maxConcurrentTurns ?? 2)),
+      ),
+      weeklyReservePercent: Math.min(
+        50,
+        Math.max(0, Math.round(settings.usageGovernor?.weeklyReservePercent ?? 10)),
+      ),
+      autoCompactEnabled: settings.usageGovernor?.autoCompactEnabled ?? true,
+      compactContextPercent: Math.min(
+        90,
+        Math.max(25, Math.round(settings.usageGovernor?.compactContextPercent ?? 60)),
+      ),
+      autoInterruptRunaways: settings.usageGovernor?.autoInterruptRunaways ?? true,
+      runawayTokenBudget: Math.max(
+        250_000,
+        Math.round(settings.usageGovernor?.runawayTokenBudget ?? 5_000_000),
+      ),
+      runawayMinutes: Math.max(
+        5,
+        Math.round(settings.usageGovernor?.runawayMinutes ?? 30),
+      ),
+    },
     ...remoteBackendSettings,
     codexBin: settings.codexBin?.trim() ? settings.codexBin.trim() : null,
     codexArgs: settings.codexArgs?.trim() ? settings.codexArgs.trim() : null,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getThreadStatusClass, getWorkspaceHomeThreadState } from "./threadStatus";
+import {
+  getThreadActivityState,
+  getThreadStatusClass,
+  getWorkspaceHomeThreadState,
+} from "./threadStatus";
 
 describe("threadStatus", () => {
   it("prioritizes pending user input over processing state", () => {
@@ -10,6 +14,18 @@ describe("threadStatus", () => {
         true,
       ),
     ).toBe("unread");
+    expect(
+      getThreadActivityState(
+        { isProcessing: true, hasUnread: false, isReviewing: false },
+        true,
+      ),
+    ).toBe("waiting");
+  });
+
+  it("maps normal-list activity independently from review and unread state", () => {
+    expect(getThreadActivityState({ isProcessing: true, isReviewing: true }, false)).toBe("running");
+    expect(getThreadActivityState({ hasUnread: true }, false)).toBe("idle");
+    expect(getThreadActivityState(undefined, false)).toBe("idle");
   });
 
   it("maps thread status to workspace home labels and classes", () => {

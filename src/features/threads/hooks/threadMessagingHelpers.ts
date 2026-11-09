@@ -7,6 +7,7 @@ import type {
   ServiceTier,
 } from "@/types";
 import { clampThreadName } from "@threads/utils/threadNaming";
+import { classifyRateLimitWindows } from "@/features/usage/usageGovernor";
 import { formatRelativeTime } from "@utils/time";
 
 export type SendMessageOptions = {
@@ -238,11 +239,12 @@ export function buildStatusLines({
     `- Collaboration: ${getCollaborationModeId(collaborationMode) || "off"}`,
   ];
 
-  const primaryUsed = rateLimits?.primary?.usedPercent;
-  const secondaryUsed = rateLimits?.secondary?.usedPercent;
+  const { session, weekly } = classifyRateLimitWindows(rateLimits);
+  const primaryUsed = session?.usedPercent;
+  const secondaryUsed = weekly?.usedPercent;
 
   if (typeof primaryUsed === "number") {
-    const reset = resetLabel(rateLimits?.primary?.resetsAt);
+    const reset = resetLabel(session?.resetsAt);
     lines.push(
       `- Session usage: ${Math.round(primaryUsed)}%${
         reset ? ` (resets ${reset})` : ""
@@ -250,7 +252,7 @@ export function buildStatusLines({
     );
   }
   if (typeof secondaryUsed === "number") {
-    const reset = resetLabel(rateLimits?.secondary?.resetsAt);
+    const reset = resetLabel(weekly?.resetsAt);
     lines.push(
       `- Weekly usage: ${Math.round(secondaryUsed)}%${
         reset ? ` (resets ${reset})` : ""

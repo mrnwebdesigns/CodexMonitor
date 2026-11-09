@@ -31,6 +31,20 @@ describe("active threads", () => {
     expect(chats[0].id).toBe("chat-0");
   });
 
+  it("shows a processing chat as waiting when it has a pending user-input request", () => {
+    const chat = { id: "needs-input", name: "Needs input", updatedAt: now };
+    const rows = buildActiveThreads(
+      [root],
+      [root],
+      { client: [chat] },
+      { "needs-input": { isProcessing: true } },
+      undefined,
+      new Set(["client:needs-input"]),
+    );
+
+    expect(rows[0]).toMatchObject({ status: "Waiting", thread: chat });
+  });
+
   it("uses the owning project label and actual worktree/clone for navigation, without duplicate imported threads", () => {
     const clone = project("clone", { path: "/tmp/client/clone", settings: { sidebarCollapsed: false, cloneSourceWorkspaceId: root.id } });
     const tree = project("tree", { path: "/tmp/client/clone/tree", kind: "worktree", parentId: clone.id });
@@ -58,6 +72,18 @@ describe("active threads", () => {
       { id: "running", name: "Running", updatedAt: 0 },
     ];
     expect(select(chats, { running: { isProcessing: true } }).map((row) => row.thread.id)).toEqual(["running", "boundary"]);
+  });
+
+  it("keeps retained chats after the recent window expires and the recent slots fill", () => {
+    const retained = { id: "retained", name: "Retained", updatedAt: now - ACTIVE_THREAD_WINDOW_MS - 1 };
+    const newer = Array.from({ length: 7 }, (_, index) => ({
+      id: `new-${index}`, name: `New ${index}`, updatedAt: now - index,
+    }));
+    const rows = buildActiveThreads([root], [root], { client: [retained, ...newer] }, {});
+
+    expect(getActiveThreads(rows, now, new Map(), new Map(), new Set([
+      activeThreadKey("client", "retained"),
+    ])).map((row) => row.thread.id)).toEqual(["new-0", "new-1", "new-2", "new-3", "new-4", "new-5", "retained"]);
   });
 
   it("dismisses only the matching chat, fills recent slots, and honors existing project dismissals", () => {

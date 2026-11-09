@@ -275,7 +275,9 @@ button.window-caption-control:focus-visible,
   .settings-agents-generate-loader,
   .composer-action-spinner,
   .compact-codex-refresh-icon.spinning,
-  .home-usage-refresh-icon.spinning {
+  .home-usage-refresh-icon.spinning,
+  .thread-status.is-running,
+  .thread-status.is-running::after {
     animation-duration: var(--ds-spinner-dur) !important;
     animation-iteration-count: infinite !important;
   }

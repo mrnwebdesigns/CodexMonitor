@@ -1,5 +1,7 @@
 import BriefcaseBusiness from "lucide-react/dist/esm/icons/briefcase-business";
 import Building2 from "lucide-react/dist/esm/icons/building-2";
+import ChevronsDownUp from "lucide-react/dist/esm/icons/chevrons-down-up";
+import ChevronsUpDown from "lucide-react/dist/esm/icons/chevrons-up-down";
 import Folder from "lucide-react/dist/esm/icons/folder";
 import GripVertical from "lucide-react/dist/esm/icons/grip-vertical";
 import type { WorkspaceGroupSortProps } from "@app/hooks/useWorkspaceGroupSort";
@@ -11,6 +13,8 @@ type WorkspaceGroupProps = {
   showHeader: boolean;
   isCollapsed: boolean;
   onToggleCollapse: (groupId: string) => void;
+  areAllProjectsCollapsed?: boolean;
+  onToggleAllProjects?: (collapsed: boolean) => void;
   sortProps?: WorkspaceGroupSortProps;
   children: React.ReactNode;
 };
@@ -22,6 +26,8 @@ export function WorkspaceGroup({
   showHeader,
   isCollapsed,
   onToggleCollapse,
+  areAllProjectsCollapsed = false,
+  onToggleAllProjects,
   sortProps,
   children,
 }: WorkspaceGroupProps) {
@@ -71,6 +77,20 @@ export function WorkspaceGroup({
           )}
           <div className="workspace-group-label"><Icon aria-hidden />{name}</div>
           {count !== undefined && <span className="workspace-group-count">{count}</span>}
+          {onToggleAllProjects && (
+            <button
+              className="workspace-group-bulk-toggle"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleAllProjects(!areAllProjectsCollapsed);
+              }}
+              aria-label={areAllProjectsCollapsed ? `Expand all projects in ${name}` : `Collapse all projects in ${name}`}
+              title={areAllProjectsCollapsed ? "Expand all" : "Collapse all"}
+              type="button"
+            >
+              {areAllProjectsCollapsed ? <ChevronsUpDown aria-hidden /> : <ChevronsDownUp aria-hidden />}
+            </button>
+          )}
           {isToggleable && (
             <button
               className={`group-toggle ${isCollapsed ? "" : "expanded"}`}

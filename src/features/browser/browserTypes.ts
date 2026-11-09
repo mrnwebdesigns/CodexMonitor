@@ -1,4 +1,6 @@
 export type BrowserSelection = {
+  threadId: string;
+  sessionId?: string;
   url: string;
   title: string;
   selector: string;
@@ -7,7 +9,8 @@ export type BrowserSelection = {
   rect: { x: number; y: number; width: number; height: number };
 };
 
-export type BrowserPageEvent = { url: string; title?: string; loading: boolean; error?: string | null };
+export type BrowserPageEvent = { threadId: string; sessionId?: string; url: string; title?: string; loading: boolean; error?: string | null };
+export type BrowserFindResult = { threadId: string; sessionId?: string; activeMatch: number; totalMatches: number; finalUpdate: boolean };
 export type BrowserBounds = { x: number; y: number; width: number; height: number };
 export type BrowserDeviceViewport = { width: number; height: number; scale: number };
 export type BrowserAction = "back" | "forward" | "reload" | "stop" | "annotate" | "browse" | "devtools";

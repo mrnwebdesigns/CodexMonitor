@@ -284,7 +284,10 @@ function SidebarWorkspaceEntry({
             }
           }}
         >
-          <span className={`thread-status ${draftStatusClass}`} aria-hidden />
+          <span
+            className={`thread-status ${draftStatusClass} ${draftStatusClass === "processing" ? "is-running" : "is-idle"}`}
+            aria-hidden
+          />
           <div className="thread-content">
             <div className="thread-headline">
               <span className="thread-name">New Agent</span>
@@ -406,6 +409,11 @@ export function SidebarWorkspaceGroups({
         const showGroupHeader = Boolean(group.id) || hasWorkspaceGroups;
         const toggleId = group.id ?? (showGroupHeader ? ungroupedCollapseId : null);
         const isGroupCollapsed = Boolean(toggleId && collapsedGroups.has(toggleId));
+        const projects = group.workspaces.filter(
+          (workspace) => !entryProps.cloneChildIds.has(workspace.id),
+        );
+        const areAllProjectsCollapsed =
+          projects.length > 0 && projects.every((workspace) => workspace.settings.sidebarCollapsed);
 
         return (
           <WorkspaceGroup
@@ -416,6 +424,16 @@ export function SidebarWorkspaceGroups({
             showHeader={showGroupHeader}
             isCollapsed={isGroupCollapsed}
             onToggleCollapse={toggleGroupCollapse}
+            areAllProjectsCollapsed={areAllProjectsCollapsed}
+            onToggleAllProjects={showGroupHeader
+              ? (collapsed) => {
+                  projects.forEach((workspace) => {
+                    if (workspace.settings.sidebarCollapsed !== collapsed) {
+                      entryProps.onToggleWorkspaceCollapse(workspace.id, collapsed);
+                    }
+                  });
+                }
+              : undefined}
             sortProps={getSortProps(group.id)}
           >
             {group.workspaces.map((workspace) => (

@@ -20,7 +20,7 @@ type Props = {
 
 export function ActiveThreads({ threads, activeWorkspaceId, activeThreadId, collapsed, onToggle, onSelect, onRemove, onShowThreadMenu, getProjectColor }: Props) {
   return <section className="active-threads" aria-label="Active Threads">
-    <button type="button" className="active-threads-heading" aria-label={`Active Threads (${threads.length})`} aria-expanded={!collapsed} onClick={onToggle} title="Running and reviewing threads, followed by up to six recently updated threads from the last seven days">
+    <button type="button" className="active-threads-heading" aria-label={`Active Threads (${threads.length})`} aria-expanded={!collapsed} onClick={onToggle} title="Threads stay here once active until you remove them">
       <Activity aria-hidden />
       <span>Active Threads</span>
       <span className="active-threads-count">{threads.length}</span>

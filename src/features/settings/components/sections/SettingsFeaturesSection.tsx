@@ -151,6 +151,89 @@ export function SettingsFeaturesSection({
           }
         />
       </SettingsToggleRow>
+      <SettingsSubsection
+        title="Usage governor"
+        subtitle="Keep parallel Codex work inside the account's weekly allowance. New tasks remain available immediately and wait in a shared queue when capacity is constrained."
+      />
+      <SettingsToggleRow
+        title="Adaptive usage governor"
+        subtitle="Run a bounded number of turns, slow down when recent usage would exhaust the weekly allowance, and protect a 10% reserve."
+      >
+        <SettingsToggleSwitch
+          pressed={appSettings.usageGovernor.mode === "adaptive"}
+          onClick={() =>
+            void onUpdateAppSettings({
+              ...appSettings,
+              usageGovernor: {
+                ...appSettings.usageGovernor,
+                mode:
+                  appSettings.usageGovernor.mode === "adaptive"
+                    ? "off"
+                    : "adaptive",
+              },
+            })
+          }
+        />
+      </SettingsToggleRow>
+      <SettingsToggleRow
+        title="Normal concurrency"
+        subtitle="Maximum account-wide turns while the projected allowance remains healthy."
+      >
+        <select
+          className="settings-select"
+          value={appSettings.usageGovernor.maxConcurrentTurns}
+          onChange={(event) =>
+            void onUpdateAppSettings({
+              ...appSettings,
+              usageGovernor: {
+                ...appSettings.usageGovernor,
+                maxConcurrentTurns: Number(event.target.value),
+              },
+            })
+          }
+          aria-label="Usage governor concurrency"
+        >
+          {[1, 2, 3, 4].map((value) => (
+            <option key={value} value={value}>{value}</option>
+          ))}
+        </select>
+      </SettingsToggleRow>
+      <SettingsToggleRow
+        title="Compact oversized queued threads"
+        subtitle="Compact an idle thread before continuing when its latest prompt uses at least 60% of the model context window."
+      >
+        <SettingsToggleSwitch
+          pressed={appSettings.usageGovernor.autoCompactEnabled}
+          onClick={() =>
+            void onUpdateAppSettings({
+              ...appSettings,
+              usageGovernor: {
+                ...appSettings.usageGovernor,
+                autoCompactEnabled:
+                  !appSettings.usageGovernor.autoCompactEnabled,
+              },
+            })
+          }
+        />
+      </SettingsToggleRow>
+      <SettingsToggleRow
+        title="Interrupt runaway turns"
+        subtitle="Pause a dominant turn after 5M tokens or 30 minutes when recent usage projects exhaustion before reset."
+      >
+        <SettingsToggleSwitch
+          pressed={appSettings.usageGovernor.autoInterruptRunaways}
+          onClick={() =>
+            void onUpdateAppSettings({
+              ...appSettings,
+              usageGovernor: {
+                ...appSettings.usageGovernor,
+                autoInterruptRunaways:
+                  !appSettings.usageGovernor.autoInterruptRunaways,
+              },
+            })
+          }
+        />
+      </SettingsToggleRow>
       {stableFeatures.map((feature) => (
         <SettingsToggleRow
           key={feature.name}

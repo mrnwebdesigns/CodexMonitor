@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ACTIVE_THREAD_WINDOW_MS, activeThreadKey } from "@/features/workspaces/domain/activeThreads";
 import type { WorkspaceInfo } from "@/types";
-import { REMOVED_ACTIVE_PROJECTS_STORAGE_KEY, REMOVED_ACTIVE_THREADS_STORAGE_KEY, useSidebarProjects } from "./useSidebarProjects";
+import { REMOVED_ACTIVE_PROJECTS_STORAGE_KEY, REMOVED_ACTIVE_THREADS_STORAGE_KEY, RETAINED_ACTIVE_THREADS_STORAGE_KEY, useSidebarProjects } from "./useSidebarProjects";
 
 const projects: WorkspaceInfo[] = Array.from({ length: 8 }, (_, index) => ({
   id: `project-${index}`, name: `Project ${index}`, path: `/tmp/project-${index}`,
@@ -80,16 +80,32 @@ describe("Active Threads removal", () => {
     expect(localStorage.getItem(REMOVED_ACTIVE_PROJECTS_STORAGE_KEY)).toBe(JSON.stringify({ "project-0": now }));
   });
 
-  it("keeps sibling threads visible and expires recent chats as the sidebar clock advances", () => {
+  it("keeps admitted sibling threads visible as the sidebar clock advances until one is removed", () => {
     vi.useFakeTimers();
     const updatedAt = Date.now() - ACTIVE_THREAD_WINDOW_MS;
     const view = renderHook(() => useSidebarProjects(projects, projects, { "project-0": [
       { id: "first", name: "First", updatedAt }, { id: "second", name: "Second", updatedAt },
     ] }, {}));
+    expect(view.result.current.activeThreads.map((entry) => entry.thread.id)).toEqual(["first", "second"]);
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(view.result.current.activeThreads.map((entry) => entry.thread.id)).toEqual(["first", "second"]);
     act(() => view.result.current.removeActiveThread("project-0", "first"));
     expect(view.result.current.activeThreads.map((entry) => entry.thread.id)).toEqual(["second"]);
-    act(() => vi.advanceTimersByTime(60_000));
-    expect(view.result.current.activeThreads).toEqual([]);
+  });
+
+  it("persists active membership so an admitted thread remains after remounting outside the recent window", () => {
+    vi.useFakeTimers();
+    const updatedAt = Date.now();
+    const threads = { "project-0": [{ id: "task", name: "Task", updatedAt }] };
+    const first = renderHook(() => useSidebarProjects(projects, projects, threads, {}));
+    expect(first.result.current.activeThreads).toHaveLength(1);
+    expect(JSON.parse(localStorage.getItem(RETAINED_ACTIVE_THREADS_STORAGE_KEY) || "[]")).toEqual([
+      activeThreadKey("project-0", "task"),
+    ]);
+    first.unmount();
+    act(() => vi.advanceTimersByTime(ACTIVE_THREAD_WINDOW_MS + 60_000));
+    const second = renderHook(() => useSidebarProjects(projects, projects, threads, {}));
+    expect(second.result.current.activeThreads.map((entry) => entry.thread.id)).toEqual(["task"]);
   });
 
 });

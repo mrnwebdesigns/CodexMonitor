@@ -6,8 +6,6 @@ type SoundLabel = "success" | "error" | "test";
 
 type AudioContextConstructor = new () => AudioContext;
 
-let audioContext: AudioContext | null = null;
-
 function resolveAudioContextConstructor(): AudioContextConstructor | null {
   if (typeof window === "undefined") {
     return null;
@@ -22,18 +20,34 @@ function resolveAudioContextConstructor(): AudioContextConstructor | null {
     null);
 }
 
-function getAudioContext(): AudioContext {
-  if (audioContext && audioContext.state !== "closed") {
-    return audioContext;
-  }
-
+function createAudioContext(): AudioContext {
   const AudioContextImpl = resolveAudioContextConstructor();
   if (!AudioContextImpl) {
     throw new Error("Web Audio API is not available in this environment");
   }
 
-  audioContext = new AudioContextImpl();
-  return audioContext;
+  return new AudioContextImpl();
+}
+
+function reportAudioError(
+  label: SoundLabel,
+  phase: "init" | "load-or-play",
+  error: unknown,
+  onDebug?: DebugLogger,
+) {
+  onDebug?.({
+    id: `${Date.now()}-audio-${label}-${phase}-error`,
+    timestamp: Date.now(),
+    source: "error",
+    label: `audio/${label} ${phase === "init" ? "init" : "load/play"} error`,
+    payload: error instanceof Error ? error.message : String(error),
+  });
+}
+
+async function closeAudioContext(ctx: AudioContext) {
+  if (ctx.state !== "closed") {
+    await ctx.close();
+  }
 }
 
 export function playNotificationSound(
@@ -41,42 +55,52 @@ export function playNotificationSound(
   label: SoundLabel,
   onDebug?: DebugLogger,
 ) {
+  let ctx: AudioContext;
   try {
-    const ctx = getAudioContext();
-
-    if (ctx.state === "suspended") {
-      void ctx.resume();
-    }
-
-    void fetch(url)
-      .then((response) => response.arrayBuffer())
-      .then((audioFileBuffer) => ctx.decodeAudioData(audioFileBuffer))
-      .then((audioBuffer) => {
-        const source = ctx.createBufferSource();
-        const gainNode = ctx.createGain();
-
-        gainNode.gain.value = 0.05;
-        source.buffer = audioBuffer;
-        source.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        source.start();
-      })
-      .catch((error) => {
-        onDebug?.({
-          id: `${Date.now()}-audio-${label}-load-or-play-error`,
-          timestamp: Date.now(),
-          source: "error",
-          label: `audio/${label} load/play error`,
-          payload: error instanceof Error ? error.message : String(error),
-        });
-      });
+    ctx = createAudioContext();
   } catch (error) {
-    onDebug?.({
-      id: `${Date.now()}-audio-${label}-init-error`,
-      timestamp: Date.now(),
-      source: "error",
-      label: `audio/${label} init error`,
-      payload: error instanceof Error ? error.message : String(error),
-    });
+    reportAudioError(label, "init", error, onDebug);
+    return;
   }
+
+  void (async () => {
+    let source: AudioBufferSourceNode | null = null;
+    let gainNode: GainNode | null = null;
+
+    try {
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
+
+      const response = await fetch(url);
+      const audioFileBuffer = await response.arrayBuffer();
+      const audioBuffer = await ctx.decodeAudioData(audioFileBuffer);
+      source = ctx.createBufferSource();
+      gainNode = ctx.createGain();
+
+      gainNode.gain.value = 0.05;
+      source.buffer = audioBuffer;
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      await new Promise<void>((resolve, reject) => {
+        source!.onended = () => resolve();
+        try {
+          source!.start();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    } catch (error) {
+      reportAudioError(label, "load-or-play", error, onDebug);
+    } finally {
+      try {
+        source?.disconnect();
+      } catch {}
+      try {
+        gainNode?.disconnect();
+      } catch {}
+      await closeAudioContext(ctx).catch(() => {});
+    }
+  })();
 }

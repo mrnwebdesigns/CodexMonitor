@@ -777,6 +777,41 @@
   transform: rotate(90deg);
 }
 
+.workspace-group-bulk-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  background: transparent;
+  opacity: 0.45;
+  -webkit-app-region: no-drag;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.workspace-group-bulk-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.workspace-group-header:hover .workspace-group-bulk-toggle,
+.workspace-group-bulk-toggle:focus-visible {
+  opacity: 1;
+}
+
+.workspace-group-bulk-toggle:hover {
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
 .workspace-card {
   display: flex;
   flex-direction: column;
@@ -1175,23 +1210,13 @@
 }
 
 .thread-status.processing {
-  background: #ff9f43;
-  box-shadow: 0 0 0 4px rgba(255, 159, 67, 0.18), 0 0 12px rgba(255, 159, 67, 0.5);
-}
-
-.thread-status.processing::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border: 2px solid #ff9f43;
-  border-radius: inherit;
-  animation: thread-status-throb 1.35s ease-out infinite;
+  background: #3fe47e;
+  box-shadow: 0 0 0 4px rgba(63, 228, 126, 0.16);
 }
 
 .thread-status.reviewing {
   background: #2fd1c4;
   box-shadow: 0 0 0 4px rgba(47, 209, 196, 0.12);
-  animation: pulse 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .thread-status.unread {
@@ -1200,13 +1225,47 @@
 }
 
 .thread-status.ready {
+  background: var(--text-faint);
+  box-shadow: none;
+}
+
+.thread-status.is-running {
   background: #3fe47e;
-  box-shadow: 0 0 0 4px rgba(63, 228, 126, 0.08);
+  box-shadow: 0 0 0 4px rgba(63, 228, 126, 0.2), 0 0 12px rgba(63, 228, 126, 0.6);
+  animation: thread-status-core-pulse 1.15s ease-in-out infinite;
+}
+
+.thread-status.is-running::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border: 2px solid #3fe47e;
+  border-radius: inherit;
+  animation: thread-status-throb 1.15s ease-out infinite;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.thread-status.is-waiting {
+  background: #f5b942;
+  box-shadow: 0 0 0 4px rgba(245, 185, 66, 0.2), 0 0 8px rgba(245, 185, 66, 0.32);
+  animation: none;
+}
+
+.thread-status.is-idle {
+  background: var(--text-faint);
+  box-shadow: none;
+  animation: none;
 }
 
 @keyframes thread-status-throb {
-  0% { transform: scale(0.55); opacity: 0.9; }
-  70%, 100% { transform: scale(1.15); opacity: 0; }
+  0% { transform: scale(0.5); opacity: 1; }
+  75%, 100% { transform: scale(1.25); opacity: 0; }
+}
+
+@keyframes thread-status-core-pulse {
+  0%, 100% { transform: scale(0.9); filter: brightness(0.95); }
+  50% { transform: scale(1.18); filter: brightness(1.25); }
 }
 
 .thread-row:hover {

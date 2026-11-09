@@ -54,7 +54,7 @@ export function useComposerController({
     images?: string[],
     appMentions?: AppMention[],
     options?: { sendIntent?: ComposerSendIntent },
-  ) => Promise<{ status: "sent" | "blocked" | "steer_failed" }>;
+  ) => Promise<SendMessageResult>;
   sendUserMessageToThread: (
     workspace: WorkspaceInfo,
     threadId: string,

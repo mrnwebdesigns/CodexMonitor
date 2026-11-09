@@ -369,8 +369,14 @@ export function subscribeMenuComposerCycleCollaboration(
   }, options);
 }
 
-import type { BrowserPageEvent, BrowserSelection } from "@/features/browser/browserTypes";
+import type { BrowserFindResult, BrowserPageEvent, BrowserSelection } from "@/features/browser/browserTypes";
 const browserPageHub = createEventHub<BrowserPageEvent>("browser-page");
 const browserSelectionHub = createEventHub<BrowserSelection>("browser-selection");
+const browserSessionActivatedHub = createEventHub<{ threadId: string }>("browser-session-activated");
+const browserFindOpenHub = createEventHub<{ threadId: string }>("browser-find-open");
+const browserFindResultHub = createEventHub<BrowserFindResult>("browser-find-result");
 export const subscribeBrowserPage = browserPageHub.subscribe;
 export const subscribeBrowserSelection = browserSelectionHub.subscribe;
+export const subscribeBrowserSessionActivated = browserSessionActivatedHub.subscribe;
+export const subscribeBrowserFindOpen = browserFindOpenHub.subscribe;
+export const subscribeBrowserFindResult = browserFindResultHub.subscribe;

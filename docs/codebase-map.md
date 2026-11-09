@@ -73,6 +73,7 @@ Use TS/Vite aliases for refactor-safe imports:
 - Reducer slices: `src/features/threads/hooks/threadReducer/*`
 - Event-focused handlers: `src/features/threads/hooks/useThreadEventHandlers.ts`, `src/features/threads/hooks/useThreadTurnEvents.ts`, `src/features/threads/hooks/useThreadItemEvents.ts`, `src/features/threads/hooks/useThreadApprovalEvents.ts`, `src/features/threads/hooks/useThreadUserInputEvents.ts`
 - Message send/steer/interrupt: `src/features/threads/hooks/useThreadMessaging.ts`
+- Adaptive usage projection and weekly-window classification: `src/features/usage/usageGovernor.ts`; queue, compaction, and risk-based interruption orchestration: `src/features/threads/hooks/useThreadMessaging.ts`; controls: `src/features/settings/components/sections/SettingsFeaturesSection.tsx`; app-level status banner: `src/features/app/components/MainApp.tsx`.
 - Persistence/local thread metadata: `src/features/threads/hooks/useThreadStorage.ts`, `src/features/threads/utils/threadStorage.ts`
 
 ### Workspaces
@@ -164,12 +165,15 @@ This is required for settings, workspace metadata, app-server payload handling, 
 
 - UI, annotation state and formatting: `src/features/browser/*`.
 - Website navigation and snapshots: `src-tauri/src/browser/*`. Apple Silicon builds with `chromium-browser` use Chromium for website content and WKWebView for the app UI. Other builds use the system webview for both.
+- Chromium session identity and ownership: `src-tauri/src/browser/session.rs`. A stable Codex thread ID derives one browser session ID and one persistent profile directory. An exclusive owner lock prevents another app process from opening that profile; stale owner metadata is recovered only after the OS lock is available.
+- Agent browser tools are per-thread app-server dynamic tools registered by `src-tauri/src/shared/codex_core.rs` under `internal_browser`. `useAppServerEvents.ts` routes each call's app-server `threadId` to `browser_tool_call`; the tool and visible pane therefore read and control the same in-process CEF page. Do not add a generic `chrome-devtools-mcp` server as a substitute.
 - MRN Local Chromium packaging: `python3 scripts/build-mrn-local-chromium.py` uses the local Tauri configuration and Codex home. The packaged framework and sandboxed helpers must accompany the app. The build command produces a signed bundle in `src-tauri/target/debug/bundle/macos/`.
 - IPC wrappers and events: `src/services/tauri.ts`, `src/services/events.ts`.
 - Desktop split view: `src/features/layout/components/DesktopLayout.tsx`.
 - Browser web content has no Tauri capability grants; its bounded selection bridge only accepts an annotation after the user enables selection. Feedback is added to the composer draft by an explicit user action.
 - Browser commands run in the local desktop app, including when Codex uses a remote daemon. They intentionally have no daemon RPC equivalent.
-- Each browser engine keeps its own website sessions. Chromium stores encrypted cookies in its app-specific profile and uses a dedicated macOS Keychain entry. Browser extension hosting and verified 1Password autofill are unavailable.
+- Each Codex thread keeps its own Chromium request context, profile, tabs, cookies, and persisted last URL. Switching threads or hiding the pane leaves the session alive; app restart reopens it from the same profile. Closing one thread releases only that thread's browser and ownership lock. Chromium stores encrypted cookies in its app-specific profiles and uses a dedicated macOS Keychain entry. Browser extension hosting and verified 1Password autofill are unavailable.
+- App-server persists dynamic-tool declarations in rollouts for threads created with this implementation and restores them on resume. Older rollouts created without `internal_browser` cannot acquire dynamic tools through the current `thread/resume` protocol; continue authenticated browser work in a browser-enabled fork/new thread rather than starting an independent browser.
 
 - Native window actions use `get_window("main")`; `get_webview_window("main")` stops matching after the embedded browser is added. Dock reopen, tray, and menu actions must work with multiple webviews.
 

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, MutableRefObject } from "react";
 import * as Sentry from "@sentry/react";
 import type {
@@ -10,6 +10,9 @@ import type {
   ReviewTarget,
   SendMessageResult,
   ServiceTier,
+  ThreadTokenUsage,
+  UsageGovernorQueueItem,
+  UsageGovernorSettings,
   WorkspaceInfo,
 } from "@/types";
 import {
@@ -41,6 +44,13 @@ import {
   resolveSendMessageOptions,
   type SendMessageOptions,
 } from "./threadMessagingHelpers";
+import {
+  appendUsageRateSample,
+  buildUsageGovernorSnapshot,
+  DEFAULT_USAGE_GOVERNOR_SETTINGS,
+  selectWeeklyRateLimit,
+  type UsageRateSample,
+} from "@/features/usage/usageGovernor";
 
 type UseThreadMessagingOptions = {
   activeWorkspace: WorkspaceInfo | null;
@@ -65,6 +75,9 @@ type UseThreadMessagingOptions = {
   threadStatusById: ThreadState["threadStatusById"];
   activeTurnIdByThread: ThreadState["activeTurnIdByThread"];
   rateLimitsByWorkspace: Record<string, RateLimitSnapshot | null>;
+  tokenUsageByThread?: Record<string, ThreadTokenUsage>;
+  workspaceIdByThread?: Record<string, string>;
+  usageGovernor?: UsageGovernorSettings;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
@@ -96,6 +109,16 @@ type UseThreadMessagingOptions = {
   renameThread?: (workspaceId: string, threadId: string, name: string) => void;
 };
 
+type GovernorQueuedRequest = UsageGovernorQueueItem & {
+  workspace: WorkspaceInfo;
+  text: string;
+  images: string[];
+  options?: SendMessageOptions;
+  compactionAttempted?: boolean;
+};
+
+const GOVERNOR_COMPACTION_COOLDOWN_MS = 30 * 60 * 1000;
+
 export function useThreadMessaging({
   activeWorkspace,
   activeThreadId,
@@ -113,6 +136,9 @@ export function useThreadMessaging({
   threadStatusById,
   activeTurnIdByThread,
   rateLimitsByWorkspace,
+  tokenUsageByThread = {},
+  workspaceIdByThread = {},
+  usageGovernor = { ...DEFAULT_USAGE_GOVERNOR_SETTINGS, mode: "off" },
   pendingInterruptsRef,
   dispatch,
   getCustomName,
@@ -131,7 +157,7 @@ export function useThreadMessaging({
   registerDetachedReviewChild,
   renameThread,
 }: UseThreadMessagingOptions) {
-  const sendMessageToThread = useCallback(
+  const sendMessageNow = useCallback(
     async (
       workspace: WorkspaceInfo,
       threadId: string,
@@ -362,6 +388,292 @@ export function useThreadMessaging({
       threadStatusById,
     ],
   );
+
+  const [governorQueue, setGovernorQueue] = useState<GovernorQueuedRequest[]>([]);
+  const [rateHistory, setRateHistory] = useState<UsageRateSample[]>([]);
+  const governorStartingRef = useRef(0);
+  const governorBaselineTokensRef = useRef<Record<string, number>>({});
+  const governorInterruptedTurnsRef = useRef(new Set<string>());
+  const governorCompactedAtRef = useRef<Record<string, number>>({});
+
+  const activeTurnCount = useMemo(
+    () =>
+      Object.values(threadStatusById).filter((status) => status.isProcessing).length,
+    [threadStatusById],
+  );
+  const weeklyRateLimit = useMemo(
+    () => selectWeeklyRateLimit(Object.values(rateLimitsByWorkspace)),
+    [rateLimitsByWorkspace],
+  );
+
+  useEffect(() => {
+    setRateHistory((previous) =>
+      appendUsageRateSample(previous, weeklyRateLimit, Date.now()),
+    );
+  }, [weeklyRateLimit]);
+
+  const usageGovernorSnapshot = useMemo(
+    () =>
+      buildUsageGovernorSnapshot({
+        settings: usageGovernor,
+        rateLimits: Object.values(rateLimitsByWorkspace),
+        history: rateHistory,
+        activeTurns: activeTurnCount,
+        queuedTurns: governorQueue.length,
+        now: Date.now(),
+      }),
+    [
+      activeTurnCount,
+      governorQueue.length,
+      rateHistory,
+      rateLimitsByWorkspace,
+      usageGovernor,
+    ],
+  );
+
+  const sendMessageToThread = useCallback(
+    async (
+      workspace: WorkspaceInfo,
+      threadId: string,
+      text: string,
+      images: string[] = [],
+      options?: SendMessageOptions,
+    ): Promise<SendMessageResult> => {
+      const targetIsProcessing = threadStatusById[threadId]?.isProcessing ?? false;
+      const shouldGovern =
+        usageGovernor.mode === "adaptive" &&
+        !targetIsProcessing &&
+        activeTurnCount + governorStartingRef.current >=
+          usageGovernorSnapshot.effectiveConcurrency;
+      if (!shouldGovern) {
+        return sendMessageNow(workspace, threadId, text, images, options);
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const position = governorQueue.length + 1;
+      setGovernorQueue((previous) => [
+        ...previous,
+        {
+          id,
+          workspaceId: workspace.id,
+          threadId,
+          workspace,
+          text,
+          images,
+          options,
+          createdAt: Date.now(),
+          position,
+        },
+      ]);
+      dispatch({
+        type: "addAssistantMessage",
+        threadId,
+        text: `Queued by usage governor · position ${position}.`,
+      });
+      safeMessageActivity();
+      return { status: "queued", queueId: id, queuePosition: position };
+    },
+    [
+      activeTurnCount,
+      dispatch,
+      governorQueue.length,
+      safeMessageActivity,
+      sendMessageNow,
+      threadStatusById,
+      usageGovernor.mode,
+      usageGovernorSnapshot.effectiveConcurrency,
+    ],
+  );
+
+  useEffect(() => {
+    if (governorQueue.length === 0) return;
+    const available = usageGovernor.mode === "adaptive"
+      ? Math.max(
+          0,
+          usageGovernorSnapshot.effectiveConcurrency -
+            activeTurnCount -
+            governorStartingRef.current,
+        )
+      : governorQueue.length;
+    if (available === 0) return;
+
+    const releasing = governorQueue.slice(0, available);
+    setGovernorQueue((previous) => previous.slice(releasing.length));
+    governorStartingRef.current += releasing.length;
+    for (const request of releasing) {
+      void (async () => {
+        try {
+          const usage = tokenUsageByThread[request.threadId];
+          const contextWindow = usage?.modelContextWindow ?? 0;
+          const contextPercent =
+            contextWindow > 0
+              ? (usage.last.inputTokens / contextWindow) * 100
+              : 0;
+          const lastCompactedAt = governorCompactedAtRef.current[request.threadId] ?? 0;
+          if (
+            usageGovernor.autoCompactEnabled &&
+            !request.compactionAttempted &&
+            contextPercent >= usageGovernor.compactContextPercent &&
+            Date.now() - lastCompactedAt >= GOVERNOR_COMPACTION_COOLDOWN_MS
+          ) {
+            governorCompactedAtRef.current[request.threadId] = Date.now();
+            try {
+              await compactThreadService(request.workspaceId, request.threadId);
+              window.setTimeout(() => {
+                setGovernorQueue((previous) => [
+                  { ...request, compactionAttempted: true },
+                  ...previous,
+                ]);
+              }, 500);
+              return;
+            } catch (error) {
+              pushThreadErrorMessage(
+                request.threadId,
+                `Automatic context compaction failed: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+          await sendMessageNow(
+            request.workspace,
+            request.threadId,
+            request.text,
+            request.images,
+            request.options,
+          );
+        } finally {
+          governorStartingRef.current = Math.max(0, governorStartingRef.current - 1);
+        }
+      })();
+    }
+  }, [
+    activeTurnCount,
+    governorQueue,
+    pushThreadErrorMessage,
+    sendMessageNow,
+    tokenUsageByThread,
+    usageGovernor,
+    usageGovernorSnapshot.effectiveConcurrency,
+  ]);
+
+  useEffect(() => {
+    for (const [threadId, status] of Object.entries(threadStatusById)) {
+      if (!status.isProcessing) {
+        delete governorBaselineTokensRef.current[threadId];
+        continue;
+      }
+      if (governorBaselineTokensRef.current[threadId] === undefined) {
+        governorBaselineTokensRef.current[threadId] =
+          tokenUsageByThread[threadId]?.total.totalTokens ?? 0;
+      }
+    }
+  }, [threadStatusById, tokenUsageByThread]);
+
+  useEffect(() => {
+    if (
+      usageGovernor.mode !== "adaptive" ||
+      !usageGovernor.autoInterruptRunaways ||
+      usageGovernorSnapshot.state === "normal" ||
+      usageGovernorSnapshot.state === "off"
+    ) {
+      return;
+    }
+    const candidates = Object.entries(threadStatusById)
+      .filter(([, status]) => status.isProcessing)
+      .map(([threadId, status]) => {
+        const total = tokenUsageByThread[threadId]?.total.totalTokens ?? 0;
+        const baseline = governorBaselineTokensRef.current[threadId] ?? total;
+        return {
+          threadId,
+          turnId: activeTurnIdByThread[threadId] ?? null,
+          workspaceId: workspaceIdByThread[threadId] ?? null,
+          tokens: Math.max(0, total - baseline),
+          durationMs:
+            status.processingStartedAt === null
+              ? 0
+              : Date.now() - status.processingStartedAt,
+        };
+      })
+      .filter((candidate) => candidate.turnId && candidate.workspaceId)
+      .sort((a, b) => b.tokens - a.tokens);
+    const dominant = candidates[0];
+    if (!dominant) return;
+    const totalGrowth = candidates.reduce((sum, candidate) => sum + candidate.tokens, 0);
+    const ownsMajority = totalGrowth === 0 || dominant.tokens >= totalGrowth / 2;
+    const overBudget = dominant.tokens >= usageGovernor.runawayTokenBudget;
+    const overTime =
+      dominant.durationMs >= usageGovernor.runawayMinutes * 60_000;
+    if (
+      !ownsMajority ||
+      (!overBudget && !overTime) ||
+      governorInterruptedTurnsRef.current.has(dominant.turnId!)
+    ) {
+      return;
+    }
+    governorInterruptedTurnsRef.current.add(dominant.turnId!);
+    void interruptTurnService(
+      dominant.workspaceId!,
+      dominant.threadId,
+      dominant.turnId!,
+    ).then(() => {
+      markProcessing(dominant.threadId, false);
+      setActiveTurnId(dominant.threadId, null);
+      dispatch({
+        type: "addAssistantMessage",
+        threadId: dominant.threadId,
+        text: "Paused by usage governor because this turn dominated recent usage while the weekly allowance was projected to run out before reset. Send Continue to resume.",
+      });
+      safeMessageActivity();
+    }).catch(() => {
+      governorInterruptedTurnsRef.current.delete(dominant.turnId!);
+    });
+  }, [
+    activeTurnIdByThread,
+    dispatch,
+    markProcessing,
+    safeMessageActivity,
+    setActiveTurnId,
+    threadStatusById,
+    tokenUsageByThread,
+    usageGovernor,
+    usageGovernorSnapshot.state,
+    workspaceIdByThread,
+  ]);
+
+  const usageGovernorQueue: UsageGovernorQueueItem[] = useMemo(
+    () =>
+      governorQueue.map((request, index) => ({
+        id: request.id,
+        workspaceId: request.workspaceId,
+        threadId: request.threadId,
+        createdAt: request.createdAt,
+        position: index + 1,
+      })),
+    [governorQueue],
+  );
+
+  const cancelUsageGovernorQueueItem = useCallback((id: string) => {
+    setGovernorQueue((previous) => previous.filter((request) => request.id !== id));
+  }, []);
+
+  const runUsageGovernorQueueItemNow = useCallback((id: string) => {
+    const request = governorQueue.find((candidate) => candidate.id === id);
+    if (!request) return;
+    setGovernorQueue((previous) =>
+      previous.filter((candidate) => candidate.id !== id),
+    );
+    governorStartingRef.current += 1;
+    void sendMessageNow(
+      request.workspace,
+      request.threadId,
+      request.text,
+      request.images,
+      request.options,
+    ).finally(() => {
+      governorStartingRef.current = Math.max(0, governorStartingRef.current - 1);
+    });
+  }, [governorQueue, sendMessageNow]);
 
   const sendUserMessage = useCallback(
     async (
@@ -937,6 +1249,10 @@ export function useThreadMessaging({
     interruptTurn,
     sendUserMessage,
     sendUserMessageToThread,
+    usageGovernorSnapshot,
+    usageGovernorQueue,
+    cancelUsageGovernorQueueItem,
+    runUsageGovernorQueueItemNow,
     startFork,
     startReview,
     startUncommittedReview,

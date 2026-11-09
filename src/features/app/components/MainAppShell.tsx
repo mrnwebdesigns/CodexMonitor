@@ -35,6 +35,7 @@ type MainAppShellProps = {
   appLayoutProps: ComponentProps<typeof AppLayout>;
   browserPanelNode?: ReactNode;
   browserToggleNode?: ReactNode;
+  usageGovernorNode?: ReactNode;
   appModalsProps: AppModalsProps;
   showMobileSetupWizard: boolean;
   mobileSetupWizardProps: ComponentProps<typeof MobileServerSetupWizard>;
@@ -51,6 +52,7 @@ export function MainAppShell({
   appLayoutProps,
   browserPanelNode,
   browserToggleNode,
+  usageGovernorNode,
   appModalsProps,
   showMobileSetupWizard,
   mobileSetupWizardProps,
@@ -65,6 +67,7 @@ export function MainAppShell({
           <GitHubPanelData {...gitHubPanelDataProps} />
         </Suspense>
       ) : null}
+      {usageGovernorNode}
       <AppLayout {...appLayoutProps} browserPanelNode={browserPanelNode} topbarActionsNode={<>{appLayoutProps.topbarActionsNode}{browserToggleNode}</>} />
       <AppModals {...appModalsProps} />
       {showMobileSetupWizard ? <MobileServerSetupWizard {...mobileSetupWizardProps} /> : null}

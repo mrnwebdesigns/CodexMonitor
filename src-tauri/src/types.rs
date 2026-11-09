@@ -447,6 +447,42 @@ pub(crate) struct RemoteBackendTarget {
     pub(crate) last_connected_at_ms: Option<i64>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct UsageGovernorSettings {
+    #[serde(default = "default_usage_governor_mode")]
+    pub(crate) mode: String,
+    #[serde(default = "default_usage_governor_concurrency")]
+    pub(crate) max_concurrent_turns: u8,
+    #[serde(default = "default_usage_governor_reserve")]
+    pub(crate) weekly_reserve_percent: u8,
+    #[serde(default = "default_true")]
+    pub(crate) auto_compact_enabled: bool,
+    #[serde(default = "default_usage_governor_compact_percent")]
+    pub(crate) compact_context_percent: u8,
+    #[serde(default = "default_true")]
+    pub(crate) auto_interrupt_runaways: bool,
+    #[serde(default = "default_usage_governor_token_budget")]
+    pub(crate) runaway_token_budget: u64,
+    #[serde(default = "default_usage_governor_minutes")]
+    pub(crate) runaway_minutes: u32,
+}
+
+impl Default for UsageGovernorSettings {
+    fn default() -> Self {
+        Self {
+            mode: default_usage_governor_mode(),
+            max_concurrent_turns: default_usage_governor_concurrency(),
+            weekly_reserve_percent: default_usage_governor_reserve(),
+            auto_compact_enabled: true,
+            compact_context_percent: default_usage_governor_compact_percent(),
+            auto_interrupt_runaways: true,
+            runaway_token_budget: default_usage_governor_token_budget(),
+            runaway_minutes: default_usage_governor_minutes(),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub(crate) struct AppSettings {
     #[serde(default, rename = "codexBin")]
@@ -646,6 +682,8 @@ pub(crate) struct AppSettings {
         rename = "pauseQueuedMessagesWhenResponseRequired"
     )]
     pub(crate) pause_queued_messages_when_response_required: bool,
+    #[serde(default, rename = "usageGovernor")]
+    pub(crate) usage_governor: UsageGovernorSettings,
     #[serde(
         default = "default_unified_exec_enabled",
         rename = "unifiedExecEnabled",
@@ -1008,6 +1046,34 @@ fn default_pause_queued_messages_when_response_required() -> bool {
     true
 }
 
+fn default_usage_governor_mode() -> String {
+    "adaptive".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_usage_governor_concurrency() -> u8 {
+    2
+}
+
+fn default_usage_governor_reserve() -> u8 {
+    10
+}
+
+fn default_usage_governor_compact_percent() -> u8 {
+    60
+}
+
+fn default_usage_governor_token_budget() -> u64 {
+    5_000_000
+}
+
+fn default_usage_governor_minutes() -> u32 {
+    30
+}
+
 fn default_unified_exec_enabled() -> bool {
     true
 }
@@ -1249,6 +1315,7 @@ impl Default for AppSettings {
             composer_follow_up_hint_enabled: default_composer_follow_up_hint_enabled(),
             pause_queued_messages_when_response_required:
                 default_pause_queued_messages_when_response_required(),
+            usage_governor: UsageGovernorSettings::default(),
             unified_exec_enabled: true,
             experimental_apps_enabled: false,
             personality: default_personality(),
@@ -1413,6 +1480,14 @@ mod tests {
         assert_eq!(settings.follow_up_message_behavior, "queue");
         assert!(settings.composer_follow_up_hint_enabled);
         assert!(settings.pause_queued_messages_when_response_required);
+        assert_eq!(settings.usage_governor.mode, "adaptive");
+        assert_eq!(settings.usage_governor.max_concurrent_turns, 2);
+        assert_eq!(settings.usage_governor.weekly_reserve_percent, 10);
+        assert!(settings.usage_governor.auto_compact_enabled);
+        assert_eq!(settings.usage_governor.compact_context_percent, 60);
+        assert!(settings.usage_governor.auto_interrupt_runaways);
+        assert_eq!(settings.usage_governor.runaway_token_budget, 5_000_000);
+        assert_eq!(settings.usage_governor.runaway_minutes, 30);
         assert!(settings.unified_exec_enabled);
         assert!(!settings.experimental_apps_enabled);
         assert_eq!(settings.personality, "friendly");

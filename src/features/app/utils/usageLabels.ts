@@ -1,4 +1,5 @@
 import type { RateLimitSnapshot } from "../../../types";
+import { classifyRateLimitWindows } from "../../usage/usageGovernor";
 import { formatRelativeTime } from "../../../utils/time";
 
 type UsageLabels = {
@@ -50,8 +51,9 @@ export function getUsageLabels(
   accountRateLimits: RateLimitSnapshot | null,
   showRemaining: boolean,
 ): UsageLabels {
-  const usagePercent = accountRateLimits?.primary?.usedPercent;
-  const globalUsagePercent = accountRateLimits?.secondary?.usedPercent;
+  const { session, weekly } = classifyRateLimitWindows(accountRateLimits);
+  const usagePercent = session?.usedPercent;
+  const globalUsagePercent = weekly?.usedPercent;
   const sessionPercent =
     typeof usagePercent === "number"
       ? showRemaining
@@ -68,9 +70,9 @@ export function getUsageLabels(
   return {
     sessionPercent,
     weeklyPercent,
-    sessionResetLabel: formatResetLabel(accountRateLimits?.primary?.resetsAt),
-    weeklyResetLabel: formatResetLabel(accountRateLimits?.secondary?.resetsAt),
+    sessionResetLabel: formatResetLabel(session?.resetsAt),
+    weeklyResetLabel: formatResetLabel(weekly?.resetsAt),
     creditsLabel: formatCreditsLabel(accountRateLimits),
-    showWeekly: Boolean(accountRateLimits?.secondary),
+    showWeekly: Boolean(weekly),
   };
 }

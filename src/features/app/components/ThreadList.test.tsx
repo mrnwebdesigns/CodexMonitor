@@ -68,6 +68,8 @@ describe("ThreadList", () => {
     }
     expect(row.classList.contains("active")).toBe(true);
     expect(row.querySelector(".thread-status")?.className).toContain("unread");
+    expect(row.querySelector(".thread-status")?.className).toContain("is-idle");
+    expect(row.querySelector(".thread-status")?.getAttribute("aria-label")).toBe("Not running");
 
     fireEvent.click(row);
     expect(onSelectThread).toHaveBeenCalledWith("ws-1", "thread-1");
@@ -158,7 +160,7 @@ describe("ThreadList", () => {
     expect(container.querySelector(".thread-workspace-label")).toBeNull();
   });
 
-  it("shows blue unread-style status when a thread is waiting for user input", () => {
+  it("shows waiting status when a thread needs user input", () => {
     const { container } = render(
       <ThreadList
         {...baseProps}
@@ -175,6 +177,8 @@ describe("ThreadList", () => {
     expect(row?.querySelector(".thread-name")?.textContent).toBe("Alpha");
     expect(row?.querySelector(".thread-status")?.className).toContain("unread");
     expect(row?.querySelector(".thread-status")?.className).not.toContain("processing");
+    expect(row?.querySelector(".thread-status")?.className).toContain("is-waiting");
+    expect(row?.querySelector(".thread-status")?.getAttribute("aria-label")).toBe("Waiting for input");
   });
 
   it("toggles sub-agent descendants for parent rows", () => {

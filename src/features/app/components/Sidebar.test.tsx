@@ -158,6 +158,43 @@ describe("Sidebar", () => {
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Clients moved after Other."));
   });
 
+  it("collapses and expands every project from its group heading", () => {
+    const onToggleWorkspaceCollapse = vi.fn();
+    const projects: WorkspaceInfo[] = [
+      { id: "alpha", name: "Alpha", path: "/tmp/alpha", connected: true, settings: { sidebarCollapsed: false } },
+      { id: "beta", name: "Beta", path: "/tmp/beta", connected: true, settings: { sidebarCollapsed: true } },
+    ];
+    const props = {
+      ...baseProps,
+      workspaces: projects,
+      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: projects }],
+      hasWorkspaceGroups: true,
+      onToggleWorkspaceCollapse,
+    };
+    const view = render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all projects in Clients" }));
+    expect(onToggleWorkspaceCollapse).toHaveBeenCalledTimes(1);
+    expect(onToggleWorkspaceCollapse).toHaveBeenCalledWith("alpha", true);
+
+    const collapsedProjects = projects.map((project) => ({
+      ...project,
+      settings: { ...project.settings, sidebarCollapsed: true },
+    }));
+    view.rerender(
+      <Sidebar
+        {...props}
+        workspaces={collapsedProjects}
+        groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: collapsedProjects }]}
+      />,
+    );
+    onToggleWorkspaceCollapse.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Expand all projects in Clients" }));
+    expect(onToggleWorkspaceCollapse).toHaveBeenCalledTimes(2);
+    expect(onToggleWorkspaceCollapse).toHaveBeenCalledWith("alpha", false);
+    expect(onToggleWorkspaceCollapse).toHaveBeenCalledWith("beta", false);
+  });
+
   it.each(["escape", "cancel", "outside", "click", "ungrouped"])("does not save when a drag ends with %s", (ending) => {
     const { handle, sections, onReorderWorkspaceGroup } = renderSortableGroups();
     fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 20, clientY: 20 });
@@ -310,7 +347,7 @@ describe("Sidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open thread: Task (Client project)" }));
     expect(baseProps.onSelectThread).toHaveBeenCalledWith("tree", "task");
     view.rerender(<Sidebar {...p} threadStatusById={{}} />);
-    expect(active.textContent).not.toContain("Client project");
+    expect(active.textContent).toContain("Client project · Updated");
     expect(view.container.querySelector(".workspace-group .workspace-name")?.textContent).toBe("Client project");
   });
 
@@ -402,6 +439,44 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "Open thread: Running task (Client Alpha)" })).toBeNull();
     second.rerender(<Sidebar {...props} threadsByWorkspace={{ tree: [{ id: "task", name: "Running task", updatedAt: updatedAt + 1 }] }} />);
     expect(screen.getByRole("button", { name: "Open thread: Running task (Client Alpha)" })).toBeTruthy();
+  });
+
+  it("keeps a waiting thread under its project while also showing it in Active Threads", () => {
+    const project: WorkspaceInfo = {
+      id: "client",
+      name: "Client Alpha",
+      path: "/tmp/client",
+      connected: true,
+      settings: { sidebarCollapsed: false },
+    };
+    const thread = { id: "task", name: "Waiting task", updatedAt: Date.now() };
+    const view = render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[project]}
+        groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [project] }]}
+        threadsByWorkspace={{ client: [thread] }}
+        threadStatusById={{ task: { isProcessing: true } }}
+        userInputRequests={[{
+          workspace_id: "client",
+          request_id: 1,
+          params: {
+            thread_id: "task",
+            turn_id: "turn-1",
+            item_id: "item-1",
+            questions: [],
+          },
+        }]}
+      />,
+    );
+
+    const activeThreads = screen.getByRole("region", { name: "Active Threads" });
+    expect(within(activeThreads).getByText("Waiting task")).toBeTruthy();
+    expect(within(activeThreads).getByText("Waiting")).toBeTruthy();
+    const projectGroup = view.container.querySelector(".workspace-group");
+    expect(projectGroup).not.toBeNull();
+    expect(within(projectGroup as HTMLElement).getByText("Waiting task")).toBeTruthy();
+    expect(within(projectGroup as HTMLElement).getByText("Waiting")).toBeTruthy();
   });
 
   it("toggles the search bar from the header icon", () => {

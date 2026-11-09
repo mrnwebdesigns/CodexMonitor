@@ -264,8 +264,28 @@ export const Sidebar = memo(function Sidebar({
     (workspace.kind ?? "main") === "main" && !workspace.parentId &&
     !workspaces.some((source) => source.id === workspace.settings.cloneSourceWorkspaceId && source.id !== workspace.id),
   ), [workspaces]);
+  const pendingUserInputKeys = useMemo(
+    () =>
+      new Set(
+        userInputRequests
+          .map((request) => {
+            const workspaceId = request.workspace_id.trim();
+            const threadId = request.params.thread_id.trim();
+            return workspaceId && threadId ? `${workspaceId}:${threadId}` : "";
+          })
+          .filter(Boolean),
+      ),
+    [userInputRequests],
+  );
   const { projectSortKey, setProjectSortKey, activity: projectActivity, activeThreads, removeActiveThread } =
-    useSidebarProjects(allWorkspaces, rootProjects, threadsByWorkspace, threadStatusById, isThreadHidden);
+    useSidebarProjects(
+      allWorkspaces,
+      rootProjects,
+      threadsByWorkspace,
+      threadStatusById,
+      isThreadHidden,
+      pendingUserInputKeys,
+    );
   const { showThreadMenu, showWorkspaceMenu, showWorktreeMenu, showCloneMenu } =
     useSidebarMenus({
       onDeleteThread,
@@ -298,20 +318,6 @@ export const Sidebar = memo(function Sidebar({
   const debouncedQuery = useDebouncedValue(searchQuery, 150);
   const normalizedQuery = debouncedQuery.trim().toLowerCase();
   const isSearchActive = Boolean(normalizedQuery);
-  const pendingUserInputKeys = useMemo(
-    () =>
-      new Set(
-        userInputRequests
-          .map((request) => {
-            const workspaceId = request.workspace_id.trim();
-            const threadId = request.params.thread_id.trim();
-            return workspaceId && threadId ? `${workspaceId}:${threadId}` : "";
-          })
-          .filter(Boolean),
-      ),
-    [userInputRequests],
-  );
-
   const isWorkspaceMatch = useCallback(
     (workspace: WorkspaceInfo) => {
       return workspaceMatchesQuery(workspace.name, normalizedQuery);

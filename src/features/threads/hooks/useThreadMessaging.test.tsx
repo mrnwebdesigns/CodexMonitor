@@ -782,4 +782,80 @@ describe("useThreadMessaging telemetry", () => {
       "Review abcdef1: Tighten sidebar commit…",
     );
   });
+
+  it("queues a new turn when the configured concurrency is already occupied", async () => {
+    const dispatch = vi.fn();
+    const processingStatus = {
+      isProcessing: true,
+      isReviewing: false,
+      hasUnread: false,
+      processingStartedAt: Date.now(),
+      lastDurationMs: null,
+    };
+    const { result } = renderHook(() =>
+      useThreadMessaging({
+        activeWorkspace: workspace,
+        activeThreadId: "thread-3",
+        accessMode: "current",
+        model: null,
+        effort: null,
+        collaborationMode: null,
+        reviewDeliveryMode: "inline",
+        steerEnabled: false,
+        customPrompts: [],
+        threadStatusById: {
+          "thread-1": processingStatus,
+          "thread-2": processingStatus,
+        },
+        activeTurnIdByThread: {},
+        rateLimitsByWorkspace: {},
+        usageGovernor: {
+          mode: "adaptive",
+          maxConcurrentTurns: 2,
+          weeklyReservePercent: 10,
+          autoCompactEnabled: true,
+          compactContextPercent: 60,
+          autoInterruptRunaways: true,
+          runawayTokenBudget: 5_000_000,
+          runawayMinutes: 30,
+        },
+        pendingInterruptsRef: { current: new Set<string>() },
+        dispatch,
+        getCustomName: vi.fn(() => undefined),
+        markProcessing: vi.fn(),
+        markReviewing: vi.fn(),
+        setActiveTurnId: vi.fn(),
+        recordThreadActivity: vi.fn(),
+        safeMessageActivity: vi.fn(),
+        onDebug: vi.fn(),
+        pushThreadErrorMessage: vi.fn(),
+        ensureThreadForActiveWorkspace: vi.fn(async () => "thread-3"),
+        ensureThreadForWorkspace: vi.fn(async () => "thread-3"),
+        refreshThread: vi.fn(async () => null),
+        forkThreadForWorkspace: vi.fn(async () => null),
+        updateThreadParent: vi.fn(),
+      }),
+    );
+
+    await act(async () => {
+      const sendResult = await result.current.sendUserMessageToThread(
+        workspace,
+        "thread-3",
+        "wait for capacity",
+        [],
+      );
+      expect(sendResult).toMatchObject({
+        status: "queued",
+        queuePosition: 1,
+      });
+    });
+
+    expect(sendUserMessageService).not.toHaveBeenCalled();
+    expect(result.current.usageGovernorQueue).toHaveLength(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "addAssistantMessage",
+      threadId: "thread-3",
+      text: "Queued by usage governor · position 1.",
+    });
+  });
 });

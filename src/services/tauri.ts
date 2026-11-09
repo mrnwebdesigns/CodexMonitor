@@ -563,6 +563,14 @@ export async function respondToServerRequest(
   });
 }
 
+export async function respondToDynamicToolCall(
+  workspaceId: string,
+  requestId: number | string,
+  result: { success: boolean; contentItems: Array<Record<string, unknown>> },
+) {
+  return invoke("respond_to_server_request", { workspaceId, requestId, result });
+}
+
 export async function respondToUserInputRequest(
   workspaceId: string,
   requestId: number | string,
@@ -1251,27 +1259,34 @@ export async function sendNotification(
 
 // Desktop browser controls are local UI commands, including in remote daemon mode.
 import type { BrowserAction, BrowserBounds, BrowserDeviceViewport } from "@/features/browser/browserTypes";
-let browserLifecycle = Promise.resolve();
-let lastClosedBrowserUrl: string | null = null;
+const browserLifecycles = new Map<string, Promise<void>>();
+const lastClosedBrowserUrls = new Map<string, string>();
 
-function queueBrowserLifecycle<T>(operation: () => Promise<T>): Promise<T> {
-  const result = browserLifecycle.then(operation);
-  browserLifecycle = result.then(() => {}, () => {});
+function queueBrowserLifecycle<T>(threadId: string, operation: () => Promise<T>): Promise<T> {
+  const lifecycle = browserLifecycles.get(threadId) ?? Promise.resolve();
+  const result = lifecycle.then(operation);
+  browserLifecycles.set(threadId, result.then(() => {}, () => {}));
   return result;
 }
 
-export const browserNavigate = (url: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) =>
-  queueBrowserLifecycle(() => invoke<void>("browser_navigate", { url, bounds, device }));
-export const browserGetUrl = () => queueBrowserLifecycle(async () =>
-  (await invoke<string | null>("browser_get_url")) ?? lastClosedBrowserUrl,
+export const browserNavigate = (threadId: string, url: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) =>
+  queueBrowserLifecycle(threadId, () => invoke<void>("browser_navigate", { threadId, url, bounds, device }));
+export const browserGetUrl = (threadId: string) => queueBrowserLifecycle(threadId, async () =>
+  (await invoke<string | null>("browser_get_url", { threadId })) ?? lastClosedBrowserUrls.get(threadId) ?? null,
 );
-export const browserClose = () => queueBrowserLifecycle(async () => {
-  lastClosedBrowserUrl = (await invoke<string | null>("browser_close")) ?? lastClosedBrowserUrl;
+export const browserClose = (threadId: string) => queueBrowserLifecycle(threadId, async () => {
+  const closedUrl = await invoke<string | null>("browser_close", { threadId });
+  if (closedUrl) lastClosedBrowserUrls.set(threadId, closedUrl);
 });
-export const browserSetBounds = (bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_set_bounds", { bounds, device });
-export const browserSetVisible = (visible: boolean) => invoke<void>("browser_set_visible", { visible });
-export const browserAction = (action: BrowserAction) => invoke<void>("browser_action", { action });
-export const browserCapture = () => invoke<string>("browser_capture");
+export const browserSetBounds = (threadId: string, bounds: BrowserBounds, device?: BrowserDeviceViewport) => invoke<void>("browser_set_bounds", { threadId, bounds, device });
+export const browserSetVisible = (threadId: string, visible: boolean) => invoke<void>("browser_set_visible", { threadId, visible });
+export const browserAction = (threadId: string, action: BrowserAction) => invoke<void>("browser_action", { threadId, action });
+export const browserFind = (threadId: string, query: string, forward: boolean, findNext: boolean) =>
+  invoke<void>("browser_find", { threadId, query, forward, findNext });
+export const browserStopFind = (threadId: string) => invoke<void>("browser_stop_find", { threadId });
+export const browserCapture = (threadId: string) => invoke<string>("browser_capture", { threadId });
+export const browserToolCall = (threadId: string, tool: string, args: unknown) =>
+  invoke<Array<Record<string, unknown>>>("browser_tool_call", { threadId, tool, arguments: args });
 export const browserFinishCapture = (path: string, keep: boolean) =>
   invoke<string | null>("browser_finish_capture", { path, keep });
 export const browserRuntimeInfo = () => invoke<{ engine: string; version: string }>("browser_runtime_info");
