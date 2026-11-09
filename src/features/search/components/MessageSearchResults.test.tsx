@@ -20,6 +20,14 @@ describe("Message search results", () => {
     expect(searchMessages).toHaveBeenCalledWith("achelios.com", ["client"], false);
   });
 
+  it("labels content matches separately and underlines the searched term", async () => {
+    render(<MessageSearchResults query="ACHELIOS.COM" workspaces={workspaces} onSelectThread={vi.fn()} />);
+    await screen.findByText("Inside conversations");
+    const match = await screen.findByText("achelios.com");
+    expect(match.className).toContain("message-search-match");
+    expect(match.closest(".message-search-excerpt")).not.toBeNull();
+  });
+
   it("filters hidden chats and results outside visible projects", async () => {
     vi.mocked(searchMessages).mockResolvedValue({ results: [result, { ...result, threadId: "private", workspaceId: "hidden" }], elapsedMs: 1, status: null });
     render(<MessageSearchResults query="achelios.com" workspaces={workspaces} isThreadHidden={() => true} onSelectThread={vi.fn()} />);
@@ -32,7 +40,7 @@ describe("Message search results", () => {
     expect(searchMessages).not.toHaveBeenCalled();
     rerender(<MessageSearchResults query="achelios.com" workspaces={workspaces} onSelectThread={vi.fn()} />);
     expect(searchMessages).not.toHaveBeenCalled();
-    await screen.findByText("Please check achelios.com");
+    await waitFor(() => expect(document.querySelector(".message-search-excerpt")?.textContent).toBe("Please check achelios.com"));
     expect(searchMessages).toHaveBeenCalledTimes(1);
   });
 
