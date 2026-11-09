@@ -189,7 +189,7 @@ function buildDefaultSettings(): AppSettings {
     composerFollowUpHintEnabled: true,
     pauseQueuedMessagesWhenResponseRequired: true,
     usageGovernor: {
-      mode: "adaptive",
+      mode: "off",
       maxConcurrentTurns: 2,
       weeklyReservePercent: 10,
       autoCompactEnabled: true,
@@ -253,7 +253,7 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
   return {
     ...settings,
     usageGovernor: {
-      mode: settings.usageGovernor?.mode === "off" ? "off" : "adaptive",
+      mode: settings.usageGovernor?.mode === "adaptive" ? "adaptive" : "off",
       maxConcurrentTurns: Math.min(
         8,
         Math.max(1, Math.round(settings.usageGovernor?.maxConcurrentTurns ?? 2)),

@@ -5,6 +5,8 @@ import type {
   ThreadListOrganizeMode,
   ThreadListSortKey,
   ThreadSummary,
+  UsageGovernorQueueItem,
+  UsageGovernorSnapshot,
   WorkspaceInfo,
 } from "../../../types";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -127,6 +129,8 @@ type SidebarProps = {
   onRefreshAllThreads: () => void;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
+  usageGovernorSnapshot?: UsageGovernorSnapshot;
+  usageGovernorQueue?: UsageGovernorQueueItem[];
   userInputRequests?: RequestUserInputRequest[];
   accountRateLimits: RateLimitSnapshot | null;
   usageShowRemaining: boolean;
@@ -190,6 +194,8 @@ export const Sidebar = memo(function Sidebar({
   onRefreshAllThreads,
   activeWorkspaceId,
   activeThreadId,
+  usageGovernorSnapshot,
+  usageGovernorQueue = [],
   userInputRequests = [],
   accountRateLimits,
   usageShowRemaining,
@@ -286,6 +292,15 @@ export const Sidebar = memo(function Sidebar({
       isThreadHidden,
       pendingUserInputKeys,
     );
+  const threadNameById = useMemo(() => {
+    const names: Record<string, string> = {};
+    Object.values(threadsByWorkspace).forEach((threads) => {
+      threads.forEach((thread) => {
+        if (!names[thread.id] || thread.name.trim()) names[thread.id] = thread.name;
+      });
+    });
+    return names;
+  }, [threadsByWorkspace]);
   const { showThreadMenu, showWorkspaceMenu, showWorktreeMenu, showCloneMenu } =
     useSidebarMenus({
       onDeleteThread,
@@ -895,12 +910,20 @@ export const Sidebar = memo(function Sidebar({
           onShow={(id) => { showProject(id); if (hiddenProjects.length === 1) setShowHiddenProjects(false); }}
           onShowAll={() => { showAllProjects(); setShowHiddenProjects(false); }}
         /> : <div className="workspace-list">
-          {isSearchActive && <MessageSearchResults query={searchQuery} workspaces={workspaces} isThreadHidden={isThreadHidden} onSelectThread={onSelectThread} />}
+          {isSearchActive && (
+            <div className="sidebar-search-title-header sidebar-section-header">
+              <span className="sidebar-section-title">Titles</span>
+            </div>
+          )}
           {!isSearchActive && workspaces.length > 0 && <ActiveThreads
             threads={activeThreads}
+            threadParentById={threadParentById}
+            threadNameById={threadNameById}
             getProjectColor={getProjectColor}
             activeWorkspaceId={activeWorkspaceId}
             activeThreadId={activeThreadId}
+            usageGovernorSnapshot={usageGovernorSnapshot}
+            usageGovernorQueue={usageGovernorQueue}
             collapsed={collapsedGroups.has("__active_projects__")}
             onToggle={() => toggleGroupCollapse("__active_projects__")}
             onSelect={onSelectThread}
@@ -1017,6 +1040,7 @@ export const Sidebar = memo(function Sidebar({
             pinnedThreadRows.length === 0 && (
               <div className="empty">No conversations yet.</div>
             )}
+          {isSearchActive && <MessageSearchResults query={searchQuery} workspaces={workspaces} isThreadHidden={isThreadHidden} onSelectThread={onSelectThread} />}
         </div>}
       </div>
       <SidebarBottomRail

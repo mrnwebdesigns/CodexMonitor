@@ -1639,6 +1639,8 @@ export default function MainApp() {
     activeWorkspace,
     activeWorkspaceId,
     activeThreadId,
+    usageGovernorSnapshot,
+    usageGovernorQueue,
     activeItems,
     userInputRequests,
     approvals,

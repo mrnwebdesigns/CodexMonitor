@@ -16,7 +16,7 @@ const WEEK_MINUTES = 7 * 24 * 60;
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 
 export const DEFAULT_USAGE_GOVERNOR_SETTINGS: UsageGovernorSettings = {
-  mode: "adaptive",
+  mode: "off",
   maxConcurrentTurns: 2,
   weeklyReservePercent: 10,
   autoCompactEnabled: true,

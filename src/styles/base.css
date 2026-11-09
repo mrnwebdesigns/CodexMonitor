@@ -276,6 +276,8 @@ button.window-caption-control:focus-visible,
   .composer-action-spinner,
   .compact-codex-refresh-icon.spinning,
   .home-usage-refresh-icon.spinning,
+  .active-thread-dot.is-running,
+  .active-thread-dot.is-running::after,
   .thread-status.is-running,
   .thread-status.is-running::after {
     animation-duration: var(--ds-spinner-dur) !important;

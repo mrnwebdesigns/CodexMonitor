@@ -343,12 +343,37 @@ describe("Sidebar", () => {
     expect(active.textContent).toContain("Task");
     expect(active.querySelector(".active-thread-meta")?.textContent).toBe("Client project · Running");
     expect(active.textContent).toContain("Running");
+    expect(active.querySelector(".active-thread-dot.is-running")).toBeTruthy();
     expect(view.container.querySelectorAll(".workspace-group .workspace-name")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Open thread: Task (Client project)" }));
     expect(baseProps.onSelectThread).toHaveBeenCalledWith("tree", "task");
     view.rerender(<Sidebar {...p} threadStatusById={{}} />);
     expect(active.textContent).toContain("Client project · Updated");
     expect(view.container.querySelector(".workspace-group .workspace-name")?.textContent).toBe("Client project");
+  });
+
+  it("shows governor capacity and queued positions in Active Threads", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    render(<Sidebar
+      {...baseProps}
+      workspaces={[project]}
+      groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [project] }]}
+      threadsByWorkspace={{ client: [{ id: "task", name: "Queued task", updatedAt: Date.now() }] }}
+      usageGovernorSnapshot={{
+        state: "throttled",
+        usedPercent: 82,
+        resetsAt: null,
+        projectedExhaustionAt: null,
+        activeTurns: 1,
+        effectiveConcurrency: 1,
+        queuedTurns: 1,
+      }}
+      usageGovernorQueue={[{ id: "queued-1", workspaceId: "client", threadId: "task", createdAt: Date.now(), position: 1 }]}
+    />);
+    const active = screen.getByRole("region", { name: "Active Threads" });
+    expect(within(active).getByText("Governor throttled · 1/1 · 1 queued")).toBeTruthy();
+    expect(within(active).getByText("Governor queued · #1")).toBeTruthy();
+    expect(active.querySelector(".active-thread-dot.is-queued")).toBeTruthy();
   });
 
   it("marks finished unread active threads and clears the indicator after they are viewed", () => {
@@ -400,6 +425,35 @@ describe("Sidebar", () => {
       threadsByWorkspace={{ client: [{ id: "archived", name: "Archived task", updatedAt: Date.now() }] }}
       threadStatusById={{ archived: { isProcessing: true } }} isThreadHidden={(_, threadId) => threadId === "archived"} />);
     expect(within(screen.getByRole("region", { name: "Active Threads" })).queryByText("Archived task")).toBeNull();
+  });
+
+  it("groups Active Threads by their root parent with labeled dividers and remembers the order", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const now = Date.now();
+    const props = {
+      ...baseProps,
+      workspaces: [project],
+      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
+      threadsByWorkspace: { client: [
+        { id: "parent-a", name: "Parent A", updatedAt: now - 4 },
+        { id: "child-a", name: "Child A", updatedAt: now },
+        { id: "parent-b", name: "Parent B", updatedAt: now - 2 },
+        { id: "child-b", name: "Child B", updatedAt: now - 3 },
+      ] },
+      threadParentById: { "child-a": "parent-a", "child-b": "parent-b" },
+    };
+    const view = render(<Sidebar {...props} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort Active Threads by parent" }));
+    expect(screen.getByRole("separator", { name: "Parent thread: Parent A" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Parent thread: Parent B" })).toBeTruthy();
+    expect(Array.from(view.container.querySelectorAll(".active-thread-name")).map((node) => node.textContent))
+      .toEqual(["Parent A", "Child A", "Parent B", "Child B"]);
+
+    view.unmount();
+    const remounted = render(<Sidebar {...props} />);
+    expect(screen.getByRole("button", { name: "Sort Active Threads by activity" }).getAttribute("aria-pressed")).toBe("true");
+    expect(remounted.container.querySelectorAll(".active-thread-group-divider")).toHaveLength(2);
   });
 
   it("sorts projects within a group and remembers the selected order after remounting", () => {
@@ -703,6 +757,9 @@ describe("Sidebar", () => {
       expect(screen.getByText("Fix workspace restore")).toBeTruthy();
       expect(screen.queryByText("Beta Project")).toBeNull();
       expect(screen.queryByText("Unrelated thread")).toBeNull();
+      const titleHeader = screen.getByText("Titles");
+      const contentHeader = screen.getByText("Inside conversations");
+      expect(titleHeader.compareDocumentPosition(contentHeader) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
   });
 

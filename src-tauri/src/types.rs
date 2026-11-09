@@ -1047,7 +1047,7 @@ fn default_pause_queued_messages_when_response_required() -> bool {
 }
 
 fn default_usage_governor_mode() -> String {
-    "adaptive".to_string()
+    "off".to_string()
 }
 
 fn default_true() -> bool {
@@ -1480,7 +1480,7 @@ mod tests {
         assert_eq!(settings.follow_up_message_behavior, "queue");
         assert!(settings.composer_follow_up_hint_enabled);
         assert!(settings.pause_queued_messages_when_response_required);
-        assert_eq!(settings.usage_governor.mode, "adaptive");
+        assert_eq!(settings.usage_governor.mode, "off");
         assert_eq!(settings.usage_governor.max_concurrent_turns, 2);
         assert_eq!(settings.usage_governor.weekly_reserve_percent, 10);
         assert!(settings.usage_governor.auto_compact_enabled);
