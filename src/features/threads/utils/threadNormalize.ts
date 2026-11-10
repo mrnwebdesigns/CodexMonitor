@@ -257,6 +257,31 @@ export function normalizeRateLimits(
   const previousPrimary = previous?.primary ?? null;
   const previousSecondary = previous?.secondary ?? null;
   const previousCredits = previous?.credits ?? null;
+  const resetCreditsRaw = raw.rateLimitResetCredits ?? raw.rate_limit_reset_credits;
+  const rateLimitResetCredits =
+    resetCreditsRaw && typeof resetCreditsRaw === "object" && !Array.isArray(resetCreditsRaw)
+      ? (() => {
+          const summary = resetCreditsRaw as Record<string, unknown>;
+          const availableCount = asFiniteNumber(summary.availableCount ?? summary.available_count);
+          if (availableCount === null) return previous?.rateLimitResetCredits ?? null;
+          const credits = Array.isArray(summary.credits)
+            ? summary.credits.flatMap((entry) => {
+                if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+                const credit = entry as Record<string, unknown>;
+                const id = asString(credit.id);
+                return id ? [{
+                  id,
+                  title: asString(credit.title),
+                  description: asString(credit.description),
+                  expiresAt: asFiniteNumber(credit.expiresAt ?? credit.expires_at),
+                }] : [];
+              })
+            : summary.credits === null ? null : previous?.rateLimitResetCredits?.credits ?? null;
+          return { availableCount: Math.max(0, Math.floor(availableCount)), credits };
+        })()
+      : resetCreditsRaw === null
+        ? null
+        : previous?.rateLimitResetCredits;
 
   const primary =
     hasOwn(raw, "primary")
@@ -312,6 +337,7 @@ export function normalizeRateLimits(
     primary,
     secondary,
     credits,
+    rateLimitResetCredits,
     planType: planTypeValue ?? (hasPlanTypeKey ? null : previous?.planType ?? null),
   };
 }

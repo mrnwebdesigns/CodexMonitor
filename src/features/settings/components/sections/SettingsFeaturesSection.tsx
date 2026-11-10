@@ -199,24 +199,6 @@ export function SettingsFeaturesSection({
         </select>
       </SettingsToggleRow>
       <SettingsToggleRow
-        title="Wait for the weekly reset"
-        subtitle="When the protected weekly reserve is reached, hold queued turns until Codex reports the next allowance window, then resume them automatically."
-      >
-        <SettingsToggleSwitch
-          pressed={appSettings.usageGovernor.waitForWeeklyReset}
-          onClick={() =>
-            void onUpdateAppSettings({
-              ...appSettings,
-              usageGovernor: {
-                ...appSettings.usageGovernor,
-                waitForWeeklyReset:
-                  !appSettings.usageGovernor.waitForWeeklyReset,
-              },
-            })
-          }
-        />
-      </SettingsToggleRow>
-      <SettingsToggleRow
         title="Compact oversized queued threads"
         subtitle="Compact an idle thread before continuing when its latest prompt uses at least 60% of the model context window."
       >

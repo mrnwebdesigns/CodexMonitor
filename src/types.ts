@@ -248,7 +248,6 @@ export type UsageGovernorSettings = {
   mode: UsageGovernorMode;
   maxConcurrentTurns: number;
   weeklyReservePercent: number;
-  waitForWeeklyReset: boolean;
   autoCompactEnabled: boolean;
   compactContextPercent: number;
   autoInterruptRunaways: boolean;
@@ -265,7 +264,7 @@ export type UsageGovernorQueueItem = {
 };
 
 export type UsageGovernorSnapshot = {
-  state: "off" | "normal" | "throttled" | "critical" | "waiting_for_reset";
+  state: "off" | "normal" | "throttled" | "critical";
   usedPercent: number | null;
   resetsAt: number | null;
   projectedExhaustionAt: number | null;
@@ -679,10 +678,21 @@ export type CreditsSnapshot = {
   balance: string | null;
 };
 
+export type RateLimitResetCredit = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  expiresAt: number | null;
+};
+
 export type RateLimitSnapshot = {
   primary: RateLimitWindow | null;
   secondary: RateLimitWindow | null;
   credits: CreditsSnapshot | null;
+  rateLimitResetCredits?: {
+    availableCount: number;
+    credits: RateLimitResetCredit[] | null;
+  } | null;
   planType: string | null;
 };
 

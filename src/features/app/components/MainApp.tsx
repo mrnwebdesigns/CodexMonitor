@@ -84,6 +84,7 @@ import {
 import { useAppShellOrchestration } from "@app/orchestration/useLayoutOrchestration";
 import { normalizeCodexArgsInput } from "@/utils/codexArgsInput";
 import { subscribeTrayOpenThread } from "@services/events";
+import { consumeAccountRateLimitResetCredit } from "@services/tauri";
 
 const SettingsView = lazy(() =>
   import("@settings/components/SettingsView").then((module) => ({
@@ -1085,6 +1086,7 @@ export default function MainApp() {
     ? rateLimitsByWorkspace[activeWorkspaceId] ?? null
     : null;
   const {
+    homeAccountWorkspaceId,
     homeAccount,
     homeRateLimits,
   } = useHomeAccount({
@@ -1098,6 +1100,31 @@ export default function MainApp() {
     refreshAccountInfo,
     refreshAccountRateLimits,
   });
+  const handleUseReset = useCallback(async () => {
+    const resetCredits = homeRateLimits?.rateLimitResetCredits;
+    if (!homeAccountWorkspaceId || !resetCredits || resetCredits.availableCount < 1) return;
+    if (!window.confirm("Use one Codex usage-limit reset now? This cannot be undone.")) return;
+    try {
+      const response = await consumeAccountRateLimitResetCredit(
+        homeAccountWorkspaceId,
+        resetCredits.credits?.[0]?.id ?? null,
+        crypto.randomUUID(),
+      );
+      const outcome = response.result?.outcome ?? response.outcome;
+      if (outcome !== "reset" && outcome !== "alreadyRedeemed") {
+        throw new Error(
+          outcome === "nothingToReset"
+            ? "Your usage does not need a reset right now."
+            : outcome === "noCredit"
+              ? "No Codex usage-limit resets are available."
+              : "Codex could not use this reset.",
+        );
+      }
+      await refreshAccountRateLimits(homeAccountWorkspaceId);
+    } catch (error) {
+      alertError(error instanceof Error ? error.message : String(error));
+    }
+  }, [alertError, homeAccountWorkspaceId, homeRateLimits, refreshAccountRateLimits]);
   const activeTokenUsage = activeThreadId
     ? tokenUsageByThread[activeThreadId] ?? null
     : null;
@@ -1648,6 +1675,7 @@ export default function MainApp() {
     activeAccount,
     homeRateLimits,
     homeAccount,
+    onUseReset: handleUseReset,
     accountSwitching,
     onSwitchAccount: handleSwitchAccount,
     onCancelSwitchAccount: handleCancelSwitchAccount,
@@ -1915,7 +1943,6 @@ export default function MainApp() {
     usageGovernorNode={
       usageGovernorSnapshot.state === "throttled" ||
       usageGovernorSnapshot.state === "critical" ||
-      usageGovernorSnapshot.state === "waiting_for_reset" ||
       usageGovernorQueue.length > 0 ? (
         <div
           className={`usage-governor-banner is-${usageGovernorSnapshot.state}`}
@@ -1928,9 +1955,6 @@ export default function MainApp() {
               : ""}
             {usageGovernorSnapshot.usedPercent !== null
               ? ` · ${Math.round(usageGovernorSnapshot.usedPercent)}% weekly used`
-              : ""}
-            {usageGovernorSnapshot.state === "waiting_for_reset"
-              ? " · waiting for reset"
               : ""}
           </span>
           {usageGovernorQueue[0] ? (

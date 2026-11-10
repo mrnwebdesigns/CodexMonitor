@@ -896,6 +896,21 @@ impl DaemonState {
         codex_core::account_rate_limits_core(&self.sessions, workspace_id).await
     }
 
+    async fn consume_account_rate_limit_reset_credit(
+        &self,
+        workspace_id: String,
+        credit_id: Option<String>,
+        idempotency_key: String,
+    ) -> Result<Value, String> {
+        codex_core::consume_account_rate_limit_reset_credit_core(
+            &self.sessions,
+            workspace_id,
+            credit_id,
+            idempotency_key,
+        )
+        .await
+    }
+
     async fn account_read(&self, workspace_id: String) -> Result<Value, String> {
         codex_core::account_read_core(&self.sessions, &self.workspaces, workspace_id).await
     }

@@ -166,6 +166,7 @@ These are v2 request methods CodexMonitor currently sends to Codex app-server:
 - `account/login/start`
 - `account/login/cancel`
 - `account/rateLimits/read`
+- `account/rateLimitResetCredit/consume`
 - `account/read`
 - `skills/list`
 - `app/list`

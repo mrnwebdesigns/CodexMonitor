@@ -47,6 +47,7 @@ import {
   writeGlobalAgentsMd,
   writeGlobalCodexConfigToml,
   createAgent,
+  consumeAccountRateLimitResetCredit,
   updateAgent,
   deleteAgent,
   readAgentConfigToml,
@@ -94,6 +95,15 @@ describe("tauri invoke wrappers", () => {
         return false;
       }
       return undefined;
+    });
+  });
+
+  it("uses an idempotency key when consuming a Codex reset credit", async () => {
+    await consumeAccountRateLimitResetCredit("workspace-1", "credit-1", "attempt-1");
+    expect(invoke).toHaveBeenCalledWith("consume_account_rate_limit_reset_credit", {
+      workspaceId: "workspace-1",
+      creditId: "credit-1",
+      idempotencyKey: "attempt-1",
     });
   });
 

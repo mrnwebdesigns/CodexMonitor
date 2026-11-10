@@ -30,6 +30,7 @@ type HomeProps = {
   accountRateLimits: RateLimitSnapshot | null;
   usageShowRemaining: boolean;
   accountInfo: AccountSnapshot | null;
+  onUseReset?: () => void;
   onSelectThread: (workspaceId: string, threadId: string) => void;
 };
 
@@ -50,6 +51,7 @@ export function Home({
   accountRateLimits,
   usageShowRemaining,
   accountInfo,
+  onUseReset,
   onSelectThread,
 }: HomeProps) {
   return (
@@ -82,6 +84,7 @@ export function Home({
         usageShowRemaining={usageShowRemaining}
         usageWorkspaceId={usageWorkspaceId}
         usageWorkspaceOptions={usageWorkspaceOptions}
+        onUseReset={onUseReset}
       />
       <SearchStorageSection />
     </div>

@@ -19,7 +19,6 @@ export const DEFAULT_USAGE_GOVERNOR_SETTINGS: UsageGovernorSettings = {
   mode: "off",
   maxConcurrentTurns: 2,
   weeklyReservePercent: 10,
-  waitForWeeklyReset: false,
   autoCompactEnabled: true,
   compactContextPercent: 60,
   autoInterruptRunaways: true,
@@ -164,9 +163,7 @@ export function buildUsageGovernorSnapshot({
   const exhaustedReserve = usedPercent !== null && usedPercent >= spendablePercent;
   const trendingPastReset =
     projection !== null && resetsAt !== null && projection < resetsAt;
-  const state = exhaustedReserve && settings.waitForWeeklyReset && resetsAt !== null && resetsAt > now
-    ? "waiting_for_reset"
-    : exhaustedReserve
+  const state = exhaustedReserve
     ? "critical"
     : trendingPastReset
       ? "throttled"
@@ -178,12 +175,7 @@ export function buildUsageGovernorSnapshot({
     resetsAt,
     projectedExhaustionAt: projection,
     activeTurns,
-    effectiveConcurrency:
-      state === "normal"
-        ? configuredConcurrency
-        : state === "waiting_for_reset"
-          ? 0
-          : 1,
+    effectiveConcurrency: state === "normal" ? configuredConcurrency : 1,
     queuedTurns,
   };
 }

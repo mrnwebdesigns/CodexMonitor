@@ -192,7 +192,6 @@ function buildDefaultSettings(): AppSettings {
       mode: "off",
       maxConcurrentTurns: 2,
       weeklyReservePercent: 10,
-      waitForWeeklyReset: false,
       autoCompactEnabled: true,
       compactContextPercent: 60,
       autoInterruptRunaways: true,
@@ -263,7 +262,6 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
         50,
         Math.max(0, Math.round(settings.usageGovernor?.weeklyReservePercent ?? 10)),
       ),
-      waitForWeeklyReset: settings.usageGovernor?.waitForWeeklyReset ?? false,
       autoCompactEnabled: settings.usageGovernor?.autoCompactEnabled ?? true,
       compactContextPercent: Math.min(
         90,

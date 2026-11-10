@@ -700,6 +700,22 @@ pub(crate) async fn account_rate_limits_core(
         .await
 }
 
+pub(crate) async fn consume_account_rate_limit_reset_credit_core(
+    sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
+    workspace_id: String,
+    credit_id: Option<String>,
+    idempotency_key: String,
+) -> Result<Value, String> {
+    let session = get_session_clone(sessions, &workspace_id).await?;
+    session
+        .send_request_for_workspace(
+            &workspace_id,
+            "account/rateLimitResetCredit/consume",
+            json!({ "creditId": credit_id, "idempotencyKey": idempotency_key }),
+        )
+        .await
+}
+
 pub(crate) async fn account_read_core(
     sessions: &Mutex<HashMap<String, Arc<WorkspaceSession>>>,
     workspaces: &Mutex<HashMap<String, WorkspaceEntry>>,

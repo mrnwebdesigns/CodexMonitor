@@ -317,6 +317,7 @@ pub fn run() {
             codex::read_agent_config_toml,
             codex::write_agent_config_toml,
             codex::account_rate_limits,
+            codex::consume_account_rate_limit_reset_credit,
             codex::account_read,
             codex::codex_login,
             codex::codex_login_cancel,

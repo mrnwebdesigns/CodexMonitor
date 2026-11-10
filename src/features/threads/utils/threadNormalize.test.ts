@@ -304,4 +304,28 @@ describe("normalizeRateLimits", () => {
 
     expect(normalized.credits).toEqual(previous.credits);
   });
+
+  it("normalizes available Codex reset credits", () => {
+    const normalized = normalizeRateLimits({
+      rateLimitResetCredits: {
+        availableCount: 1,
+        credits: [{
+          id: "credit-1",
+          title: "Full reset",
+          description: "Restores usage",
+          expiresAt: 1_800_000_000,
+        }],
+      },
+    });
+
+    expect(normalized.rateLimitResetCredits).toEqual({
+      availableCount: 1,
+      credits: [{
+        id: "credit-1",
+        title: "Full reset",
+        description: "Restores usage",
+        expiresAt: 1_800_000_000,
+      }],
+    });
+  });
 });

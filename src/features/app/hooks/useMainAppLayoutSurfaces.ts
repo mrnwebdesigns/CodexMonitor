@@ -62,6 +62,7 @@ type UseMainAppLayoutSurfacesArgs = {
   activeAccount: SidebarProps["accountInfo"];
   homeRateLimits: LayoutNodesOptions["primary"]["homeProps"]["accountRateLimits"];
   homeAccount: LayoutNodesOptions["primary"]["homeProps"]["accountInfo"];
+  onUseReset?: LayoutNodesOptions["primary"]["homeProps"]["onUseReset"];
   accountSwitching: SidebarProps["accountSwitching"];
   onSwitchAccount: SidebarProps["onSwitchAccount"];
   onCancelSwitchAccount: SidebarProps["onCancelSwitchAccount"];
@@ -268,6 +269,7 @@ function buildPrimarySurface({
   sidebarAccount,
   homeRateLimits,
   homeAccount,
+  onUseReset,
   accountSwitching,
   onSwitchAccount,
   onCancelSwitchAccount,
@@ -606,6 +608,7 @@ function buildPrimarySurface({
       accountRateLimits: homeRateLimits,
       usageShowRemaining: appSettings.usageShowRemaining,
       accountInfo: homeAccount,
+      onUseReset,
       onSelectThread: (workspaceId, threadId) => {
         threadNavigation.exitDiffView();
         threadNavigation.clearDraftState();

@@ -25,6 +25,7 @@ type HomeUsageSectionProps = {
   onRefreshLocalUsage: () => void;
   onUsageMetricChange: (metric: UsageMetric) => void;
   onUsageWorkspaceChange: (workspaceId: string | null) => void;
+  onUseReset?: () => void;
   usageMetric: UsageMetric;
   usageShowRemaining: boolean;
   usageWorkspaceId: string | null;
@@ -53,6 +54,7 @@ export function HomeUsageSection({
   onRefreshLocalUsage,
   onUsageMetricChange,
   onUsageWorkspaceChange,
+  onUseReset = () => undefined,
   usageMetric,
   usageShowRemaining,
   usageWorkspaceId,
@@ -304,6 +306,12 @@ export function HomeUsageSection({
                 <div className="home-section-meta">{accountMeta}</div>
               </div>
             )}
+            {accountRateLimits?.rateLimitResetCredits &&
+              accountRateLimits.rateLimitResetCredits.availableCount > 0 && (
+                <button type="button" className="ghost" onClick={onUseReset}>
+                  Use reset
+                </button>
+              )}
           </div>
           <div className="home-usage-grid home-account-grid">
             {accountCards.map((card) => (
