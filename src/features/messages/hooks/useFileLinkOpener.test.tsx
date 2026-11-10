@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { openWorkspaceIn } from "../../../services/tauri";
+import { downloadLocalFile, openWorkspaceIn } from "../../../services/tauri";
 import { fileTarget } from "../test/fileLinkAssertions";
 import { useFileLinkOpener } from "./useFileLinkOpener";
 
@@ -20,6 +20,7 @@ const {
 }));
 
 vi.mock("../../../services/tauri", () => ({
+  downloadLocalFile: vi.fn(),
   openWorkspaceIn: vi.fn(),
 }));
 
@@ -122,6 +123,44 @@ describe("useFileLinkOpener", () => {
     expect(openWorkspaceInMock).toHaveBeenCalledWith(
       "/Users/sotiriskaniras/Documents/Development/Forks/CodexMonitor/src/features/messages/components/Markdown.tsx",
       expect.objectContaining({ appName: "Visual Studio Code", args: [] }),
+    );
+  });
+
+  it("opens PDFs in Preview instead of the configured editor", async () => {
+    const openWorkspaceInMock = vi.mocked(openWorkspaceIn);
+    const { result } = renderHook(() => useFileLinkOpener("/tmp/project", [], ""));
+
+    await act(async () => {
+      await result.current.openFileLink(fileTarget("reports/summary.PDF"));
+    });
+
+    expect(openWorkspaceInMock).toHaveBeenCalledWith("/tmp/project/reports/summary.PDF", {
+      appName: "Preview",
+      args: [],
+    });
+  });
+
+  it("offers a download action for linked PDFs", async () => {
+    menuItemNewMock.mockImplementation(async (options) => options);
+    predefinedMenuItemNewMock.mockImplementation(async (options) => options);
+    menuNewMock.mockImplementation(async ({ items }) => ({ items, popup: vi.fn() }));
+    const { result } = renderHook(() => useFileLinkOpener("/tmp/project", [], ""));
+
+    await act(async () => {
+      await result.current.showFileLinkMenu(
+        { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 12, clientY: 24 } as never,
+        fileTarget("reports/summary.pdf"),
+      );
+    });
+
+    const items = menuNewMock.mock.calls[0]?.[0]?.items ?? [];
+    const downloadItem = items.find(
+      (item: { text?: string; action?: () => Promise<void> }) => item.text === "Download PDF",
+    );
+    await downloadItem?.action?.();
+    expect(downloadLocalFile).toHaveBeenCalledWith(
+      "/tmp/project/reports/summary.pdf",
+      "summary.pdf",
     );
   });
 

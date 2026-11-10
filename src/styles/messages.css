@@ -1163,6 +1163,24 @@
   color: var(--text-stronger);
 }
 
+.message .markdown .message-file-reference {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.message .markdown .message-file-download {
+  border: 0;
+  padding: 0;
+  color: var(--message-link-color);
+  background: transparent;
+  font: inherit;
+  font-size: 0.78em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .message .markdown .message-file-link-name {
   font-family: var(--code-font-family);
   font-weight: 520;

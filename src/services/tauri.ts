@@ -122,6 +122,22 @@ export async function exportMarkdownFile(
   return selection;
 }
 
+export async function downloadLocalFile(
+  sourcePath: string,
+  defaultFileName: string,
+): Promise<string | null> {
+  const selection = await save({
+    title: "Download PDF",
+    defaultPath: defaultFileName,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  if (!selection) {
+    return null;
+  }
+  await invoke("copy_file", { sourcePath, destinationPath: selection });
+  return selection;
+}
+
 export async function listWorkspaces(): Promise<WorkspaceInfo[]> {
   try {
     return await invoke<WorkspaceInfo[]>("list_workspaces");

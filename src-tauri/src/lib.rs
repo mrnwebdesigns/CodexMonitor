@@ -230,6 +230,7 @@ pub fn run() {
             files::read_image_as_data_url,
             image_drop::resolve_dropped_directories,
             files::write_text_file,
+            files::copy_file,
             codex::get_config_model,
             menu::menu_set_accelerators,
             tray::set_tray_recent_threads,

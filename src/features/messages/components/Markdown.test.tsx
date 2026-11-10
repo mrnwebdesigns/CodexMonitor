@@ -9,6 +9,20 @@ describe("Markdown file-like href behavior", () => {
     cleanup();
   });
 
+  it("renders a download action alongside PDF links", () => {
+    const onDownloadFileLink = vi.fn();
+    render(
+      <Markdown
+        value="See [report](./reports/summary.pdf)"
+        className="markdown"
+        onDownloadFileLink={onDownloadFileLink}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }));
+    expectOpenedFileTarget(onDownloadFileLink, "./reports/summary.pdf");
+  });
+
   it("prevents file-like href navigation when no file opener is provided", () => {
     render(
       <Markdown

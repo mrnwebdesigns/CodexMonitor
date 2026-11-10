@@ -79,7 +79,7 @@ export const Messages = memo(function Messages({
             (!workspaceId || request.workspace_id === workspaceId),
         )?.request_id ?? null)
       : null;
-  const { openFileLink, showFileLinkMenu } = useFileLinkOpener(
+  const { downloadFileLink, openFileLink, showFileLinkMenu } = useFileLinkOpener(
     workspacePath,
     openTargets,
     selectedOpenAppId,
@@ -158,6 +158,7 @@ export const Messages = memo(function Messages({
           showMessageFilePath={showMessageFilePath}
           workspacePath={workspacePath}
           onOpenFileLink={openFileLink}
+          onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
         />
@@ -176,6 +177,7 @@ export const Messages = memo(function Messages({
           showMessageFilePath={showMessageFilePath}
           workspacePath={workspacePath}
           onOpenFileLink={openFileLink}
+          onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
         />
@@ -189,6 +191,7 @@ export const Messages = memo(function Messages({
           showMessageFilePath={showMessageFilePath}
           workspacePath={workspacePath}
           onOpenFileLink={openFileLink}
+          onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
         />
@@ -219,6 +222,7 @@ export const Messages = memo(function Messages({
           showMessageFilePath={showMessageFilePath}
           workspacePath={workspacePath}
           onOpenFileLink={openFileLink}
+          onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
           onRequestAutoScroll={requestAutoScroll}

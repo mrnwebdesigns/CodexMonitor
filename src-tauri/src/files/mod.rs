@@ -124,3 +124,26 @@ pub(crate) fn write_text_file(path: String, content: String) -> Result<(), Strin
     }
     std::fs::write(&target, content).map_err(|err| format!("Failed to write export file: {err}"))
 }
+
+#[tauri::command]
+pub(crate) fn copy_file(source_path: String, destination_path: String) -> Result<(), String> {
+    let source = std::fs::canonicalize(source_path.trim())
+        .map_err(|err| format!("Failed to access source file: {err}"))?;
+    if !source.is_file() {
+        return Err("Source path must be a file".to_string());
+    }
+
+    let destination = PathBuf::from(destination_path.trim());
+    if destination.as_os_str().is_empty() {
+        return Err("Destination path is required".to_string());
+    }
+    if let Some(parent) = destination.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|err| format!("Failed to create download directory: {err}"))?;
+        }
+    }
+    std::fs::copy(&source, &destination)
+        .map_err(|err| format!("Failed to download file: {err}"))?;
+    Ok(())
+}

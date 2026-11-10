@@ -4,6 +4,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import * as notification from "@tauri-apps/plugin-notification";
 import {
   exportMarkdownFile,
+  downloadLocalFile,
   addWorkspace,
   compactThread,
   createGitHubRepo,
@@ -454,6 +455,24 @@ describe("tauri invoke wrappers", () => {
       args: ["--reuse-window"],
       line: null,
       column: null,
+    });
+  });
+
+  it("copies a local PDF to a user-selected download path", async () => {
+    vi.mocked(save).mockResolvedValueOnce("/Users/me/Downloads/report.pdf");
+
+    await expect(downloadLocalFile("/tmp/report.pdf", "report.pdf")).resolves.toBe(
+      "/Users/me/Downloads/report.pdf",
+    );
+
+    expect(save).toHaveBeenCalledWith({
+      title: "Download PDF",
+      defaultPath: "report.pdf",
+      filters: [{ name: "PDF", extensions: ["pdf"] }],
+    });
+    expect(invoke).toHaveBeenCalledWith("copy_file", {
+      sourcePath: "/tmp/report.pdf",
+      destinationPath: "/Users/me/Downloads/report.pdf",
     });
   });
 

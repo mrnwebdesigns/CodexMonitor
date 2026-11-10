@@ -23,6 +23,7 @@ type MarkdownProps = {
   showFilePath?: boolean;
   workspacePath?: string | null;
   onOpenFileLink?: (path: ParsedFileLocation) => void;
+  onDownloadFileLink?: (path: ParsedFileLocation) => void;
   onOpenFileLinkMenu?: (event: React.MouseEvent, path: ParsedFileLocation) => void;
   onOpenThreadLink?: (threadId: string) => void;
 };
@@ -323,6 +324,7 @@ function FileReferenceLink({
   workspacePath,
   onClick,
   onContextMenu,
+  onDownload,
 }: {
   href: string;
   rawPath: ParsedFileLocation;
@@ -330,9 +332,10 @@ function FileReferenceLink({
   workspacePath?: string | null;
   onClick: (event: React.MouseEvent, path: ParsedFileLocation) => void;
   onContextMenu: (event: React.MouseEvent, path: ParsedFileLocation) => void;
+  onDownload?: (path: ParsedFileLocation) => void;
 }) {
   const { fullPath, fileName, lineLabel, parentPath } = describeFileTarget(rawPath, workspacePath);
-  return (
+  const link = (
     <a
       href={href}
       className="message-file-link"
@@ -346,6 +349,25 @@ function FileReferenceLink({
         <span className="message-file-link-path">{parentPath}</span>
       ) : null}
     </a>
+  );
+  if (!/\.pdf$/i.test(fullPath) || !onDownload) {
+    return link;
+  }
+  return (
+    <span className="message-file-reference">
+      {link}
+      <button
+        type="button"
+        className="message-file-download"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onDownload(rawPath);
+        }}
+      >
+        Download
+      </button>
+    </span>
   );
 }
 
@@ -437,6 +459,7 @@ export function Markdown({
   showFilePath = true,
   workspacePath = null,
   onOpenFileLink,
+  onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
 }: MarkdownProps) {
@@ -526,11 +549,25 @@ export function Markdown({
             workspacePath={workspacePath}
             onClick={handleFileLinkClick}
             onContextMenu={handleFileLinkContextMenu}
+            onDownload={onDownloadFileLink}
           />
         );
       }
       const hrefFilePath = resolveHrefFilePath(url);
       if (hrefFilePath) {
+        if (/\.pdf$/i.test(hrefFilePath.path)) {
+          return (
+            <FileReferenceLink
+              href={href ?? toFileLink(hrefFilePath)}
+              rawPath={hrefFilePath}
+              showFilePath={showFilePath}
+              workspacePath={workspacePath}
+              onClick={handleFileLinkClick}
+              onContextMenu={handleFileLinkContextMenu}
+              onDownload={onDownloadFileLink}
+            />
+          );
+        }
         const formattedHrefFilePath = formatParsedFileLocation(hrefFilePath);
         const clickHandler = (event: React.MouseEvent) =>
           handleFileLinkClick(event, hrefFilePath);
@@ -595,6 +632,7 @@ export function Markdown({
           workspacePath={workspacePath}
           onClick={handleFileLinkClick}
           onContextMenu={handleFileLinkContextMenu}
+          onDownload={onDownloadFileLink}
         />
       );
     },

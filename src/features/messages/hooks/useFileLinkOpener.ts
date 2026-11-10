@@ -5,7 +5,7 @@ import { LogicalPosition } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import * as Sentry from "@sentry/react";
-import { openWorkspaceIn } from "../../../services/tauri";
+import { downloadLocalFile, openWorkspaceIn } from "../../../services/tauri";
 import { pushErrorToast } from "../../../services/toasts";
 import type { OpenAppTarget } from "../../../types";
 import {
@@ -92,6 +92,14 @@ function resolveFileLinkContext(
   };
 }
 
+function isPdfPath(path: string) {
+  return /\.pdf$/i.test(path.trim());
+}
+
+function fileNameFromPath(path: string) {
+  return path.replace(/\\/g, "/").split("/").pop() || "download.pdf";
+}
+
 export function useFileLinkOpener(
   workspacePath: string | null,
   openTargets: OpenAppTarget[],
@@ -120,11 +128,29 @@ export function useFileLinkOpener(
 
   const openFileLink = useCallback(
     async (targetLocation: ParsedFileLocation) => {
-      const target = resolveOpenTarget(openTargets, selectedOpenAppId);
       const { fileLocation, rawPathLabel, resolvedPath } = resolveFileLinkContext(
         targetLocation,
         workspacePath,
       );
+
+      if (isPdfPath(resolvedPath)) {
+        try {
+          await openWorkspaceIn(resolvedPath, { appName: "Preview", args: [] });
+        } catch (error) {
+          reportOpenError(error, {
+            rawPath: rawPathLabel,
+            resolvedPath,
+            workspacePath,
+            targetId: "preview",
+            targetKind: "app",
+            targetAppName: "Preview",
+            targetCommand: null,
+          });
+        }
+        return;
+      }
+
+      const target = resolveOpenTarget(openTargets, selectedOpenAppId);
       const openLocation = {
         ...(fileLocation.line !== null ? { line: fileLocation.line } : {}),
         ...(fileLocation.column !== null ? { column: fileLocation.column } : {}),
@@ -174,6 +200,26 @@ export function useFileLinkOpener(
       }
     },
     [openTargets, reportOpenError, selectedOpenAppId, workspacePath],
+  );
+
+  const downloadFileLink = useCallback(
+    async (targetLocation: ParsedFileLocation) => {
+      const { rawPathLabel, resolvedPath } = resolveFileLinkContext(targetLocation, workspacePath);
+      try {
+        await downloadLocalFile(resolvedPath, fileNameFromPath(resolvedPath));
+      } catch (error) {
+        reportOpenError(error, {
+          rawPath: rawPathLabel,
+          resolvedPath,
+          workspacePath,
+          targetId: "download",
+          targetKind: "file",
+          targetAppName: null,
+          targetCommand: null,
+        });
+      }
+    },
+    [reportOpenError, workspacePath],
   );
 
   const showFileLinkMenu = useCallback(
@@ -228,10 +274,16 @@ export function useFileLinkOpener(
                 },
               }),
             ]),
-        await MenuItem.new({
-          text: "Download Linked File",
-          enabled: false,
-        }),
+        ...(isPdfPath(resolvedPath)
+          ? [
+              await MenuItem.new({
+                text: "Download PDF",
+                action: async () => {
+                  await downloadFileLink(fileLocation);
+                },
+              }),
+            ]
+          : []),
         await MenuItem.new({
           text: "Copy Link",
           action: async () => {
@@ -252,8 +304,8 @@ export function useFileLinkOpener(
       const position = new LogicalPosition(event.clientX, event.clientY);
       await menu.popup(position, window);
     },
-    [openFileLink, openTargets, reportOpenError, selectedOpenAppId, workspacePath],
+    [downloadFileLink, openFileLink, openTargets, reportOpenError, selectedOpenAppId, workspacePath],
   );
 
-  return { openFileLink, showFileLinkMenu };
+  return { downloadFileLink, openFileLink, showFileLinkMenu };
 }

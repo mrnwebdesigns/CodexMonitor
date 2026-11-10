@@ -41,6 +41,7 @@ type MarkdownFileLinkProps = {
   showMessageFilePath?: boolean;
   workspacePath?: string | null;
   onOpenFileLink?: (path: ParsedFileLocation) => void;
+  onDownloadFileLink?: (path: ParsedFileLocation) => void;
   onOpenFileLinkMenu?: (event: MouseEvent, path: ParsedFileLocation) => void;
   onOpenThreadLink?: (threadId: string) => void;
 };
@@ -375,6 +376,7 @@ export const MessageRow = memo(function MessageRow({
   showMessageFilePath,
   workspacePath,
   onOpenFileLink,
+  onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
 }: MessageRowProps) {
@@ -462,6 +464,7 @@ export const MessageRow = memo(function MessageRow({
             showFilePath={showMessageFilePath}
             workspacePath={workspacePath}
             onOpenFileLink={onOpenFileLink}
+            onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
           />
@@ -515,6 +518,7 @@ export const ReasoningRow = memo(function ReasoningRow({
   showMessageFilePath,
   workspacePath,
   onOpenFileLink,
+  onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
 }: ReasoningRowProps) {
@@ -552,6 +556,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             showFilePath={showMessageFilePath}
             workspacePath={workspacePath}
             onOpenFileLink={onOpenFileLink}
+            onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
           />
@@ -566,6 +571,7 @@ export const ReviewRow = memo(function ReviewRow({
   showMessageFilePath,
   workspacePath,
   onOpenFileLink,
+  onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
 }: ReviewRowProps) {
@@ -587,6 +593,7 @@ export const ReviewRow = memo(function ReviewRow({
           showFilePath={showMessageFilePath}
           workspacePath={workspacePath}
           onOpenFileLink={onOpenFileLink}
+          onDownloadFileLink={onDownloadFileLink}
           onOpenFileLinkMenu={onOpenFileLinkMenu}
           onOpenThreadLink={onOpenThreadLink}
         />
@@ -690,6 +697,7 @@ export const ToolRow = memo(function ToolRow({
   showMessageFilePath,
   workspacePath,
   onOpenFileLink,
+  onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
   onRequestAutoScroll,
@@ -863,6 +871,7 @@ export const ToolRow = memo(function ToolRow({
             showFilePath={showMessageFilePath}
             workspacePath={workspacePath}
             onOpenFileLink={onOpenFileLink}
+            onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
           />
@@ -876,6 +885,7 @@ export const ToolRow = memo(function ToolRow({
             showFilePath={showMessageFilePath}
             workspacePath={workspacePath}
             onOpenFileLink={onOpenFileLink}
+            onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
           />
