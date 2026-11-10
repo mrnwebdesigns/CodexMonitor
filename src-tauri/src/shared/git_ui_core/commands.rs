@@ -77,6 +77,26 @@ async fn gh_git_protocol(repo_root: &Path) -> String {
         .unwrap_or_else(|_| "https".to_string())
 }
 
+fn github_publish_error(remote_url: Option<&str>, error: String) -> String {
+    let normalized = error.to_lowercase();
+    let uses_github_ssh = remote_url
+        .map(|url| url.starts_with("git@github.com:") || url.starts_with("ssh://git@github.com/"))
+        .unwrap_or(false);
+    let access_failure = normalized.contains("repository not found")
+        || normalized.contains("could not read from remote repository")
+        || normalized.contains("permission denied");
+
+    if uses_github_ssh && access_failure {
+        return format!(
+            "GitHub created or found the repository, but Git could not push through its SSH identity. \
+             The GitHub CLI account and the SSH key used by Git may be different. Grant that SSH key access \
+             to the repository, or configure GitHub CLI to use HTTPS and retry.\n\n{error}"
+        );
+    }
+
+    error
+}
+
 pub(super) fn validate_branch_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -601,25 +621,34 @@ pub(super) async fn create_github_repo_inner(
         name.and_then(|name| validate_branch_name(&name).ok())
     };
 
-    let default_branch_result = if let Some(branch) = default_branch.as_deref() {
-        run_gh_command(
-            &repo_root,
-            &[
-                "api",
-                "-X",
-                "PATCH",
-                &format!("/repos/{full_name}"),
-                "-f",
-                &format!("default_branch={branch}"),
-            ],
-        )
-        .await
-        .map(|_| ())
+    // A newly-created GitHub repository has no branch until the first push. Do not
+    // attempt to set its default branch when that push failed; GitHub correctly
+    // rejects that request with HTTP 422, which otherwise obscures the root cause.
+    let default_branch_result = if push_result.is_ok() {
+        if let Some(branch) = default_branch.as_deref() {
+            run_gh_command(
+                &repo_root,
+                &[
+                    "api",
+                    "-X",
+                    "PATCH",
+                    &format!("/repos/{full_name}"),
+                    "-f",
+                    &format!("default_branch={branch}"),
+                ],
+            )
+            .await
+            .map(|_| ())
+        } else {
+            Ok(())
+        }
     } else {
         Ok(())
     };
 
-    let push_error = push_result.err();
+    let push_error = push_result
+        .err()
+        .map(|error| github_publish_error(remote_url.as_deref(), error));
     let default_branch_error = default_branch_result.err();
 
     if push_error.is_some() || default_branch_error.is_some() {
@@ -696,7 +725,7 @@ pub(super) async fn create_git_branch_inner(
 
 #[cfg(test)]
 mod tests {
-    use super::{gh_repo_create_args, validate_branch_name};
+    use super::{gh_repo_create_args, github_publish_error, validate_branch_name};
 
     #[test]
     fn validate_branch_name_rejects_repeated_slashes() {
@@ -726,6 +755,29 @@ mod tests {
         assert_eq!(
             gh_repo_create_args("owner/repo", "--public", true),
             vec!["repo", "create", "owner/repo", "--public"]
+        );
+    }
+
+    #[test]
+    fn github_publish_error_explains_github_ssh_access_mismatch() {
+        let error = github_publish_error(
+            Some("git@github.com:mrnwebdesigns/CTWilson.git"),
+            "ERROR: Repository not found.\nfatal: Could not read from remote repository."
+                .to_string(),
+        );
+
+        assert!(error.contains("SSH identity"));
+        assert!(error.contains("use HTTPS"));
+    }
+
+    #[test]
+    fn github_publish_error_preserves_non_ssh_errors() {
+        assert_eq!(
+            github_publish_error(
+                Some("https://github.com/mrnwebdesigns/CTWilson.git"),
+                "remote rejected".to_string(),
+            ),
+            "remote rejected"
         );
     }
 }
