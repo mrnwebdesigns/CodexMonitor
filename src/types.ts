@@ -248,6 +248,7 @@ export type UsageGovernorSettings = {
   mode: UsageGovernorMode;
   maxConcurrentTurns: number;
   weeklyReservePercent: number;
+  waitForWeeklyReset: boolean;
   autoCompactEnabled: boolean;
   compactContextPercent: number;
   autoInterruptRunaways: boolean;
@@ -264,7 +265,7 @@ export type UsageGovernorQueueItem = {
 };
 
 export type UsageGovernorSnapshot = {
-  state: "off" | "normal" | "throttled" | "critical";
+  state: "off" | "normal" | "throttled" | "critical" | "waiting_for_reset";
   usedPercent: number | null;
   resetsAt: number | null;
   projectedExhaustionAt: number | null;

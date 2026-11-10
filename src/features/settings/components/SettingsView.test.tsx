@@ -136,6 +136,7 @@ const baseSettings: AppSettings = {
     mode: "adaptive",
     maxConcurrentTurns: 2,
     weeklyReservePercent: 10,
+    waitForWeeklyReset: false,
     autoCompactEnabled: true,
     compactContextPercent: 60,
     autoInterruptRunaways: true,

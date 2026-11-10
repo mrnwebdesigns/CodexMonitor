@@ -11,6 +11,7 @@ const settings: UsageGovernorSettings = {
   mode: "adaptive",
   maxConcurrentTurns: 2,
   weeklyReservePercent: 10,
+  waitForWeeklyReset: false,
   autoCompactEnabled: true,
   compactContextPercent: 60,
   autoInterruptRunaways: true,
@@ -63,5 +64,19 @@ describe("usage governor", () => {
     expect(result.state).toBe("throttled");
     expect(result.effectiveConcurrency).toBe(1);
     expect(result.projectedExhaustionAt).not.toBeNull();
+  });
+
+  it("holds queued work until the weekly reset when enabled", () => {
+    const now = 1_000_000;
+    const result = buildUsageGovernorSnapshot({
+      settings: { ...settings, waitForWeeklyReset: true },
+      rateLimits: [snapshot(90, Math.floor((now + 60_000) / 1000))],
+      history: [],
+      activeTurns: 0,
+      queuedTurns: 1,
+      now,
+    });
+    expect(result.state).toBe("waiting_for_reset");
+    expect(result.effectiveConcurrency).toBe(0);
   });
 });

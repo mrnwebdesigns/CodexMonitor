@@ -811,6 +811,7 @@ export function useThreads({
       ),
     ),
     usageGovernor,
+    refreshAccountRateLimits,
     pendingInterruptsRef,
     dispatch,
     getCustomName,

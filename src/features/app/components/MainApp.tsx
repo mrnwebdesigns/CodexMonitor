@@ -1913,6 +1913,7 @@ export default function MainApp() {
     usageGovernorNode={
       usageGovernorSnapshot.state === "throttled" ||
       usageGovernorSnapshot.state === "critical" ||
+      usageGovernorSnapshot.state === "waiting_for_reset" ||
       usageGovernorQueue.length > 0 ? (
         <div
           className={`usage-governor-banner is-${usageGovernorSnapshot.state}`}
@@ -1925,6 +1926,9 @@ export default function MainApp() {
               : ""}
             {usageGovernorSnapshot.usedPercent !== null
               ? ` · ${Math.round(usageGovernorSnapshot.usedPercent)}% weekly used`
+              : ""}
+            {usageGovernorSnapshot.state === "waiting_for_reset"
+              ? " · waiting for reset"
               : ""}
           </span>
           {usageGovernorQueue[0] ? (

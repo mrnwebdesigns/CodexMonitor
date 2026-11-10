@@ -78,6 +78,7 @@ type UseThreadMessagingOptions = {
   tokenUsageByThread?: Record<string, ThreadTokenUsage>;
   workspaceIdByThread?: Record<string, string>;
   usageGovernor?: UsageGovernorSettings;
+  refreshAccountRateLimits?: (workspaceId: string) => Promise<void>;
   pendingInterruptsRef: MutableRefObject<Set<string>>;
   dispatch: Dispatch<ThreadAction>;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
@@ -139,6 +140,7 @@ export function useThreadMessaging({
   tokenUsageByThread = {},
   workspaceIdByThread = {},
   usageGovernor = { ...DEFAULT_USAGE_GOVERNOR_SETTINGS, mode: "off" },
+  refreshAccountRateLimits,
   pendingInterruptsRef,
   dispatch,
   getCustomName,
@@ -430,6 +432,31 @@ export function useThreadMessaging({
       usageGovernor,
     ],
   );
+
+  useEffect(() => {
+    if (
+      usageGovernorSnapshot.state !== "waiting_for_reset" ||
+      usageGovernorSnapshot.resetsAt === null ||
+      governorQueue.length === 0
+    ) {
+      return;
+    }
+    const delay = Math.max(0, usageGovernorSnapshot.resetsAt - Date.now()) + 250;
+    const timeout = window.setTimeout(() => {
+      const workspaceIds = [
+        ...new Set(governorQueue.map((request) => request.workspaceId)),
+      ];
+      void Promise.all(
+        workspaceIds.map((workspaceId) => refreshAccountRateLimits?.(workspaceId)),
+      ).catch(() => undefined);
+    }, Math.min(delay, 2_147_483_647));
+    return () => window.clearTimeout(timeout);
+  }, [
+    governorQueue,
+    refreshAccountRateLimits,
+    usageGovernorSnapshot.resetsAt,
+    usageGovernorSnapshot.state,
+  ]);
 
   const sendMessageToThread = useCallback(
     async (

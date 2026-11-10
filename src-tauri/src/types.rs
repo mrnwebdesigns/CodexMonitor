@@ -456,6 +456,8 @@ pub(crate) struct UsageGovernorSettings {
     pub(crate) max_concurrent_turns: u8,
     #[serde(default = "default_usage_governor_reserve")]
     pub(crate) weekly_reserve_percent: u8,
+    #[serde(default)]
+    pub(crate) wait_for_weekly_reset: bool,
     #[serde(default = "default_true")]
     pub(crate) auto_compact_enabled: bool,
     #[serde(default = "default_usage_governor_compact_percent")]
@@ -474,6 +476,7 @@ impl Default for UsageGovernorSettings {
             mode: default_usage_governor_mode(),
             max_concurrent_turns: default_usage_governor_concurrency(),
             weekly_reserve_percent: default_usage_governor_reserve(),
+            wait_for_weekly_reset: false,
             auto_compact_enabled: true,
             compact_context_percent: default_usage_governor_compact_percent(),
             auto_interrupt_runaways: true,
@@ -1483,6 +1486,7 @@ mod tests {
         assert_eq!(settings.usage_governor.mode, "off");
         assert_eq!(settings.usage_governor.max_concurrent_turns, 2);
         assert_eq!(settings.usage_governor.weekly_reserve_percent, 10);
+        assert!(!settings.usage_governor.wait_for_weekly_reset);
         assert!(settings.usage_governor.auto_compact_enabled);
         assert_eq!(settings.usage_governor.compact_context_percent, 60);
         assert!(settings.usage_governor.auto_interrupt_runaways);
