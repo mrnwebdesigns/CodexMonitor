@@ -9,6 +9,20 @@ describe("Markdown file-like href behavior", () => {
     cleanup();
   });
 
+  it("opens website links in the supplied thread browser", () => {
+    const onOpenWebsite = vi.fn();
+    render(
+      <Markdown
+        value="Preview [the site](https://example.com/preview)"
+        className="markdown"
+        onOpenWebsite={onOpenWebsite}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "the site" }));
+    expect(onOpenWebsite).toHaveBeenCalledWith("https://example.com/preview");
+  });
+
   it("renders a download action alongside PDF links", () => {
     const onDownloadFileLink = vi.fn();
     render(

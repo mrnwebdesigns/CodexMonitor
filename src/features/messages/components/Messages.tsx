@@ -46,6 +46,7 @@ type MessagesProps = {
   onPlanAccept?: () => void;
   onPlanSubmitChanges?: (changes: string) => void;
   onOpenThreadLink?: (threadId: string, workspaceId?: string | null) => void;
+  onOpenWebsite?: (url: string) => void;
   onQuoteMessage?: (text: string) => void;
 };
 
@@ -69,6 +70,7 @@ export const Messages = memo(function Messages({
   onPlanAccept,
   onPlanSubmitChanges,
   onOpenThreadLink,
+  onOpenWebsite,
   onQuoteMessage,
 }: MessagesProps) {
   const activeUserInputRequestId =
@@ -161,6 +163,7 @@ export const Messages = memo(function Messages({
           onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
+          onOpenWebsite={onOpenWebsite}
         />
       );
     }
@@ -180,6 +183,7 @@ export const Messages = memo(function Messages({
           onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
+          onOpenWebsite={onOpenWebsite}
         />
       );
     }
@@ -194,6 +198,7 @@ export const Messages = memo(function Messages({
           onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
+          onOpenWebsite={onOpenWebsite}
         />
       );
     }
@@ -225,6 +230,7 @@ export const Messages = memo(function Messages({
           onDownloadFileLink={downloadFileLink}
           onOpenFileLinkMenu={showFileLinkMenu}
           onOpenThreadLink={handleOpenThreadLink}
+          onOpenWebsite={onOpenWebsite}
           onRequestAutoScroll={requestAutoScroll}
         />
       );

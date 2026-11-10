@@ -129,6 +129,7 @@ type UseMainAppLayoutSurfacesArgs = {
   handleAddWorktreeAgent: SidebarProps["onAddWorktreeAgent"];
   handleAddCloneAgent: SidebarProps["onAddCloneAgent"];
   handleOpenThreadLink: LayoutNodesOptions["primary"]["messagesProps"]["onOpenThreadLink"];
+  onOpenWebsite: LayoutNodesOptions["primary"]["messagesProps"]["onOpenWebsite"];
   handleSelectOpenAppId: MainHeaderProps["onSelectOpenAppId"];
   handleCopyThread: MainHeaderProps["onCopyThread"];
   handleToggleTerminalWithFocus: MainHeaderProps["onToggleTerminal"];
@@ -304,6 +305,7 @@ function buildPrimarySurface({
   handleAddWorktreeAgent,
   handleAddCloneAgent,
   handleOpenThreadLink,
+  onOpenWebsite,
   handleSelectOpenAppId,
   handleCopyThread,
   handleToggleTerminalWithFocus,
@@ -456,6 +458,7 @@ function buildPrimarySurface({
       onPlanAccept,
       onPlanSubmitChanges,
       onOpenThreadLink: handleOpenThreadLink,
+      onOpenWebsite,
       onQuoteMessage: composerWorkspaceState.canInsertComposerText
         ? composerWorkspaceState.handleInsertComposerText
         : undefined,
@@ -1106,6 +1109,7 @@ export function useMainAppLayoutSurfaces({
   dismissErrorToast,
   showDebugButton,
   handleDebugClick,
+  onOpenWebsite,
 }: UseMainAppLayoutSurfacesArgs): LayoutNodesOptions {
   const sidebarRateLimits = activeWorkspace ? activeRateLimits : homeRateLimits;
   const sidebarAccount = activeWorkspace ? activeAccount : homeAccount;
@@ -1183,6 +1187,7 @@ export function useMainAppLayoutSurfaces({
     handleAddWorktreeAgent,
     handleAddCloneAgent,
     handleOpenThreadLink,
+    onOpenWebsite,
     handleSelectOpenAppId,
     handleCopyThread,
     handleToggleTerminalWithFocus,

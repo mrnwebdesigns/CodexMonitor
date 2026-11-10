@@ -1719,6 +1719,9 @@ export default function MainApp() {
     handleAddWorktreeAgent,
     handleAddCloneAgent,
     handleOpenThreadLink,
+    onOpenWebsite: !isCompact && activeWorkspace && activeThreadId
+      ? (url) => browser.openWebsite(activeWorkspace.id, activeThreadId, url)
+      : undefined,
     handleSelectOpenAppId,
     handleCopyThread,
     handleToggleTerminalWithFocus,

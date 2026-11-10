@@ -44,6 +44,7 @@ type MarkdownFileLinkProps = {
   onDownloadFileLink?: (path: ParsedFileLocation) => void;
   onOpenFileLinkMenu?: (event: MouseEvent, path: ParsedFileLocation) => void;
   onOpenThreadLink?: (threadId: string) => void;
+  onOpenWebsite?: (url: string) => void;
 };
 
 type WorkingIndicatorProps = {
@@ -379,6 +380,7 @@ export const MessageRow = memo(function MessageRow({
   onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
+  onOpenWebsite,
 }: MessageRowProps) {
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -467,6 +469,7 @@ export const MessageRow = memo(function MessageRow({
             onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
+            onOpenWebsite={onOpenWebsite}
           />
         )}
         {lightboxIndex !== null && imageItems.length > 0 && (
@@ -521,6 +524,7 @@ export const ReasoningRow = memo(function ReasoningRow({
   onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
+  onOpenWebsite,
 }: ReasoningRowProps) {
   const { summaryTitle, bodyText, hasBody } = parsed;
   const reasoningTone: StatusTone = hasBody ? "completed" : "processing";
@@ -559,6 +563,7 @@ export const ReasoningRow = memo(function ReasoningRow({
             onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
+            onOpenWebsite={onOpenWebsite}
           />
         )}
       </div>
@@ -574,6 +579,7 @@ export const ReviewRow = memo(function ReviewRow({
   onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
+  onOpenWebsite,
 }: ReviewRowProps) {
   const title = item.state === "started" ? "Review started" : "Review completed";
   return (
@@ -596,6 +602,7 @@ export const ReviewRow = memo(function ReviewRow({
           onDownloadFileLink={onDownloadFileLink}
           onOpenFileLinkMenu={onOpenFileLinkMenu}
           onOpenThreadLink={onOpenThreadLink}
+          onOpenWebsite={onOpenWebsite}
         />
       )}
     </div>
@@ -700,6 +707,7 @@ export const ToolRow = memo(function ToolRow({
   onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
+  onOpenWebsite,
   onRequestAutoScroll,
 }: ToolRowProps) {
   const isFileChange = item.toolType === "fileChange";
@@ -874,6 +882,7 @@ export const ToolRow = memo(function ToolRow({
             onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
+            onOpenWebsite={onOpenWebsite}
           />
         )}
         {showCommandOutput && <CommandOutput output={summary.output ?? ""} />}
@@ -888,6 +897,7 @@ export const ToolRow = memo(function ToolRow({
             onDownloadFileLink={onDownloadFileLink}
             onOpenFileLinkMenu={onOpenFileLinkMenu}
             onOpenThreadLink={onOpenThreadLink}
+            onOpenWebsite={onOpenWebsite}
           />
         )}
         {showToolOutput && isPlan && (summary.output ?? "").trim() && (

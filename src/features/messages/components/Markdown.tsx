@@ -26,6 +26,7 @@ type MarkdownProps = {
   onDownloadFileLink?: (path: ParsedFileLocation) => void;
   onOpenFileLinkMenu?: (event: React.MouseEvent, path: ParsedFileLocation) => void;
   onOpenThreadLink?: (threadId: string) => void;
+  onOpenWebsite?: (url: string) => void;
 };
 
 type CodeBlockProps = {
@@ -45,6 +46,7 @@ type PreProps = {
   };
   children?: ReactNode;
   copyUseModifier: boolean;
+  onOpenWebsite?: (url: string) => void;
 };
 
 type LinkBlockProps = {
@@ -297,7 +299,7 @@ function normalizeListIndentation(value: string) {
   return normalized.join("\n");
 }
 
-function LinkBlock({ urls }: LinkBlockProps) {
+function LinkBlock({ urls, onOpenWebsite }: LinkBlockProps & Pick<MarkdownProps, "onOpenWebsite">) {
   return (
     <div className="markdown-linkblock">
       {urls.map((url, index) => (
@@ -307,7 +309,8 @@ function LinkBlock({ urls }: LinkBlockProps) {
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            void openUrl(url);
+            if (onOpenWebsite) onOpenWebsite(url);
+            else void openUrl(url);
           }}
         >
           {url}
@@ -424,14 +427,14 @@ function CodeBlock({ className, value, copyUseModifier }: CodeBlockProps) {
   );
 }
 
-function PreBlock({ node, children, copyUseModifier }: PreProps) {
+function PreBlock({ node, children, copyUseModifier, onOpenWebsite }: PreProps) {
   const { className, value } = extractCodeFromPre(node);
   if (!className && !value && children) {
     return <pre>{children}</pre>;
   }
   const urlLines = extractUrlLines(value);
   if (urlLines) {
-    return <LinkBlock urls={urlLines} />;
+    return <LinkBlock urls={urlLines} onOpenWebsite={onOpenWebsite} />;
   }
   const isSingleLine = !value.includes("\n");
   if (isSingleLine) {
@@ -462,6 +465,7 @@ export function Markdown({
   onDownloadFileLink,
   onOpenFileLinkMenu,
   onOpenThreadLink,
+  onOpenWebsite,
 }: MarkdownProps) {
   const normalizedValue = codeBlock
     ? value
@@ -607,7 +611,8 @@ export function Markdown({
           onClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            void openUrl(url);
+            if (onOpenWebsite) onOpenWebsite(url);
+            else void openUrl(url);
           }}
         >
           {children}
@@ -640,7 +645,7 @@ export function Markdown({
 
   if (codeBlockStyle === "message") {
     components.pre = ({ node, children }) => (
-      <PreBlock node={node as PreProps["node"]} copyUseModifier={codeBlockCopyUseModifier}>
+      <PreBlock node={node as PreProps["node"]} copyUseModifier={codeBlockCopyUseModifier} onOpenWebsite={onOpenWebsite}>
         {children}
       </PreBlock>
     );
