@@ -5,8 +5,6 @@ import type {
   ThreadListOrganizeMode,
   ThreadListSortKey,
   ThreadSummary,
-  UsageGovernorQueueItem,
-  UsageGovernorSnapshot,
   WorkspaceInfo,
 } from "../../../types";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
@@ -129,8 +127,6 @@ type SidebarProps = {
   onRefreshAllThreads: () => void;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
-  usageGovernorSnapshot?: UsageGovernorSnapshot;
-  usageGovernorQueue?: UsageGovernorQueueItem[];
   userInputRequests?: RequestUserInputRequest[];
   accountRateLimits: RateLimitSnapshot | null;
   usageShowRemaining: boolean;
@@ -194,8 +190,6 @@ export const Sidebar = memo(function Sidebar({
   onRefreshAllThreads,
   activeWorkspaceId,
   activeThreadId,
-  usageGovernorSnapshot,
-  usageGovernorQueue = [],
   userInputRequests = [],
   accountRateLimits,
   usageShowRemaining,
@@ -292,15 +286,6 @@ export const Sidebar = memo(function Sidebar({
       isThreadHidden,
       pendingUserInputKeys,
     );
-  const threadNameById = useMemo(() => {
-    const names: Record<string, string> = {};
-    Object.values(threadsByWorkspace).forEach((threads) => {
-      threads.forEach((thread) => {
-        if (!names[thread.id] || thread.name.trim()) names[thread.id] = thread.name;
-      });
-    });
-    return names;
-  }, [threadsByWorkspace]);
   const { showThreadMenu, showWorkspaceMenu, showWorktreeMenu, showCloneMenu } =
     useSidebarMenus({
       onDeleteThread,
@@ -917,13 +902,9 @@ export const Sidebar = memo(function Sidebar({
           )}
           {!isSearchActive && workspaces.length > 0 && <ActiveThreads
             threads={activeThreads}
-            threadParentById={threadParentById}
-            threadNameById={threadNameById}
             getProjectColor={getProjectColor}
             activeWorkspaceId={activeWorkspaceId}
             activeThreadId={activeThreadId}
-            usageGovernorSnapshot={usageGovernorSnapshot}
-            usageGovernorQueue={usageGovernorQueue}
             collapsed={collapsedGroups.has("__active_projects__")}
             onToggle={() => toggleGroupCollapse("__active_projects__")}
             onSelect={onSelectThread}

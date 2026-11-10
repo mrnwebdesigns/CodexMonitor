@@ -352,30 +352,6 @@ describe("Sidebar", () => {
     expect(view.container.querySelector(".workspace-group .workspace-name")?.textContent).toBe("Client project");
   });
 
-  it("shows governor capacity and queued positions in Active Threads", () => {
-    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
-    render(<Sidebar
-      {...baseProps}
-      workspaces={[project]}
-      groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [project] }]}
-      threadsByWorkspace={{ client: [{ id: "task", name: "Queued task", updatedAt: Date.now() }] }}
-      usageGovernorSnapshot={{
-        state: "throttled",
-        usedPercent: 82,
-        resetsAt: null,
-        projectedExhaustionAt: null,
-        activeTurns: 1,
-        effectiveConcurrency: 1,
-        queuedTurns: 1,
-      }}
-      usageGovernorQueue={[{ id: "queued-1", workspaceId: "client", threadId: "task", createdAt: Date.now(), position: 1 }]}
-    />);
-    const active = screen.getByRole("region", { name: "Active Threads" });
-    expect(within(active).getByText("Governor throttled · 1/1 · 1 queued")).toBeTruthy();
-    expect(within(active).getByText("Governor queued · #1")).toBeTruthy();
-    expect(active.querySelector(".active-thread-dot.is-queued")).toBeTruthy();
-  });
-
   it("marks finished unread active threads and clears the indicator after they are viewed", () => {
     const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
     const props = { ...baseProps, workspaces: [project], groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
@@ -427,33 +403,25 @@ describe("Sidebar", () => {
     expect(within(screen.getByRole("region", { name: "Active Threads" })).queryByText("Archived task")).toBeNull();
   });
 
-  it("groups Active Threads by their root parent with labeled dividers and remembers the order", () => {
-    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+  it("groups Active Threads by project with labeled dividers", () => {
+    const projects = ["Client Alpha", "Client Beta"].map((name) => ({ id: name, name, path: `/tmp/${name}`, connected: true, settings: { sidebarCollapsed: true } }));
     const now = Date.now();
     const props = {
       ...baseProps,
-      workspaces: [project],
-      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
-      threadsByWorkspace: { client: [
-        { id: "parent-a", name: "Parent A", updatedAt: now - 4 },
-        { id: "child-a", name: "Child A", updatedAt: now },
-        { id: "parent-b", name: "Parent B", updatedAt: now - 2 },
-        { id: "child-b", name: "Child B", updatedAt: now - 3 },
-      ] },
-      threadParentById: { "child-a": "parent-a", "child-b": "parent-b" },
+      workspaces: projects,
+      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: projects }],
+      threadsByWorkspace: {
+        "Client Alpha": [{ id: "alpha-a", name: "Alpha A", updatedAt: now }, { id: "alpha-b", name: "Alpha B", updatedAt: now - 2 }],
+        "Client Beta": [{ id: "beta-a", name: "Beta A", updatedAt: now - 1 }],
+      },
     };
     const view = render(<Sidebar {...props} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Sort Active Threads by parent" }));
-    expect(screen.getByRole("separator", { name: "Parent thread: Parent A" })).toBeTruthy();
-    expect(screen.getByRole("separator", { name: "Parent thread: Parent B" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Project: Client Alpha" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Project: Client Beta" })).toBeTruthy();
     expect(Array.from(view.container.querySelectorAll(".active-thread-name")).map((node) => node.textContent))
-      .toEqual(["Parent A", "Child A", "Parent B", "Child B"]);
-
-    view.unmount();
-    const remounted = render(<Sidebar {...props} />);
-    expect(screen.getByRole("button", { name: "Sort Active Threads by activity" }).getAttribute("aria-pressed")).toBe("true");
-    expect(remounted.container.querySelectorAll(".active-thread-group-divider")).toHaveLength(2);
+      .toEqual(["Alpha A", "Alpha B", "Beta A"]);
+    expect(view.container.querySelector(".active-threads-order")).toBeNull();
   });
 
   it("sorts projects within a group and remembers the selected order after remounting", () => {
@@ -694,8 +662,8 @@ describe("Sidebar", () => {
     expect(screen.getByText("Recent conversations")).toBeTruthy();
     expect(renderedNames[0]).toBe("Newer thread");
     expect(renderedNames[1]).toBe("Older thread");
-    expect(screen.getByText("Alpha Project")).toBeTruthy();
-    expect(screen.getByText("Beta Project")).toBeTruthy();
+    expect(screen.getAllByText("Alpha Project").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Beta Project").length).toBeGreaterThan(0);
   });
 
   it("keeps a project visible when its thread matches the search query", async () => {

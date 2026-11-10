@@ -55,8 +55,6 @@ type UseMainAppLayoutSurfacesArgs = {
   activeWorkspace: WorkspaceInfo | null;
   activeWorkspaceId: string | null;
   activeThreadId: string | null;
-  usageGovernorSnapshot: SidebarProps["usageGovernorSnapshot"];
-  usageGovernorQueue: SidebarProps["usageGovernorQueue"];
   activeItems: LayoutNodesOptions["primary"]["messagesProps"]["items"];
   userInputRequests: SidebarProps["userInputRequests"];
   approvals: LayoutNodesOptions["primary"]["approvalToastsProps"]["approvals"];
@@ -262,8 +260,6 @@ function buildPrimarySurface({
   activeWorkspace,
   activeWorkspaceId,
   activeThreadId,
-  usageGovernorSnapshot,
-  usageGovernorQueue,
   activeItems,
   userInputRequests,
   approvals,
@@ -407,8 +403,6 @@ function buildPrimarySurface({
       onRefreshAllThreads,
       activeWorkspaceId,
       activeThreadId,
-      usageGovernorSnapshot,
-      usageGovernorQueue,
       userInputRequests,
       accountRateLimits: sidebarRateLimits,
       usageShowRemaining: appSettings.usageShowRemaining,
@@ -977,8 +971,6 @@ export function useMainAppLayoutSurfaces({
   activeWorkspace,
   activeWorkspaceId,
   activeThreadId,
-  usageGovernorSnapshot,
-  usageGovernorQueue,
   activeItems,
   userInputRequests,
   approvals,
@@ -1143,8 +1135,6 @@ export function useMainAppLayoutSurfaces({
     activeWorkspace,
     activeWorkspaceId,
     activeThreadId,
-    usageGovernorSnapshot,
-    usageGovernorQueue,
     activeItems,
     userInputRequests,
     approvals,
