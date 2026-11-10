@@ -391,7 +391,9 @@ function CodeBlock({ className, value, copyUseModifier }: CodeBlockProps) {
 
   const handleCopy = async (event: MouseEvent<HTMLButtonElement>) => {
     try {
-      const shouldFence = copyUseModifier ? event.altKey : true;
+      // A code block's Copy control should put only its contents on the clipboard.
+      // Fences are available as an explicit Option/Alt-click when enabled.
+      const shouldFence = copyUseModifier && event.altKey;
       const nextValue = shouldFence ? fencedValue : value;
       await navigator.clipboard.writeText(nextValue);
       setCopied(true);

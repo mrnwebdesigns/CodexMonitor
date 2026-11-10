@@ -1131,7 +1131,7 @@ fn default_composer_list_continuation() -> bool {
 }
 
 fn default_composer_code_block_copy_use_modifier() -> bool {
-    false
+    true
 }
 
 fn default_workspace_groups() -> Vec<WorkspaceGroup> {
@@ -1503,7 +1503,7 @@ mod tests {
         assert!(!settings.composer_fence_auto_wrap_paste_multiline);
         assert!(!settings.composer_fence_auto_wrap_paste_code_like);
         assert!(!settings.composer_list_continuation);
-        assert!(!settings.composer_code_block_copy_use_modifier);
+        assert!(settings.composer_code_block_copy_use_modifier);
         assert!(settings.workspace_groups.is_empty());
         let expected_open_id = if cfg!(target_os = "windows") {
             "finder"

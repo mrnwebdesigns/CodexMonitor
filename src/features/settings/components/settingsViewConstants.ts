@@ -46,7 +46,7 @@ export const COMPOSER_PRESET_CONFIGS: Record<
     composerFenceAutoWrapPasteMultiline: false,
     composerFenceAutoWrapPasteCodeLike: false,
     composerListContinuation: false,
-    composerCodeBlockCopyUseModifier: false,
+    composerCodeBlockCopyUseModifier: true,
   },
   helpful: {
     composerFenceExpandOnSpace: true,
@@ -56,7 +56,7 @@ export const COMPOSER_PRESET_CONFIGS: Record<
     composerFenceAutoWrapPasteMultiline: true,
     composerFenceAutoWrapPasteCodeLike: false,
     composerListContinuation: true,
-    composerCodeBlockCopyUseModifier: false,
+    composerCodeBlockCopyUseModifier: true,
   },
   smart: {
     composerFenceExpandOnSpace: true,
@@ -66,7 +66,7 @@ export const COMPOSER_PRESET_CONFIGS: Record<
     composerFenceAutoWrapPasteMultiline: true,
     composerFenceAutoWrapPasteCodeLike: true,
     composerListContinuation: true,
-    composerCodeBlockCopyUseModifier: false,
+    composerCodeBlockCopyUseModifier: true,
   },
 };
 

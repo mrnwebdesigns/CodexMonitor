@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { expectOpenedFileTarget } from "../test/fileLinkAssertions";
 import { Markdown } from "./Markdown";
@@ -585,4 +585,35 @@ describe("Markdown file-like href behavior", () => {
     expect(screen.getByText("Ready")).toBeTruthy();
   });
 
+});
+
+describe("Markdown code-block copy", () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("copies only the code, without its Markdown fence or language tag", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      clipboard: { writeText },
+    });
+    render(
+      <Markdown
+        value={"```bash\ncd /workspace\npython3 script.py\n```"}
+        className="markdown"
+        codeBlockStyle="message"
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy code block" }));
+    });
+
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("cd /workspace\npython3 script.py");
+    });
+  });
 });

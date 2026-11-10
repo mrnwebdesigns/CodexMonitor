@@ -189,10 +189,10 @@ export function SettingsComposerSection({
         />
       </SettingsToggleRow>
       <SettingsToggleRow
-        title="Copy blocks without fences"
+        title="Enable fenced-code copy shortcut"
         subtitle={
           <>
-            When enabled, Copy is plain text. Hold {optionKeyLabel} to include ``` fences.
+            Copy is always plain text. When enabled, hold {optionKeyLabel} to include ``` fences.
           </>
         }
       >
