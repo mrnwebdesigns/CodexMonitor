@@ -107,18 +107,25 @@ pub(crate) fn profile_dir(root: &Path, thread_id: &str) -> Result<PathBuf, Strin
     Ok(root.join("profiles").join(session_id(thread_id)?))
 }
 
-pub(crate) fn record_path(profile: &Path) -> PathBuf {
-    profile.join("session.json")
+/// App-owned state deliberately lives outside CEF's cache path. CEF owns every
+/// byte below `profiles/`; creating a file there before the request context is
+/// initialized makes a new CEF profile fail to initialize on macOS.
+pub(crate) fn metadata_dir(root: &Path, thread_id: &str) -> Result<PathBuf, String> {
+    Ok(root.join("sessions").join(session_id(thread_id)?))
 }
 
-pub(crate) fn ownership_path(profile: &Path) -> PathBuf {
-    profile.join("owner.json")
+pub(crate) fn record_path(metadata: &Path) -> PathBuf {
+    metadata.join("session.json")
 }
 
-pub(crate) fn claim_ownership(profile: &Path, thread_id: &str) -> Result<OwnershipClaim, String> {
+pub(crate) fn ownership_path(metadata: &Path) -> PathBuf {
+    metadata.join("owner.json")
+}
+
+pub(crate) fn claim_ownership(metadata: &Path, thread_id: &str) -> Result<OwnershipClaim, String> {
     let expected_session_id = session_id(thread_id)?;
-    std::fs::create_dir_all(profile).map_err(|error| error.to_string())?;
-    let path = ownership_path(profile);
+    std::fs::create_dir_all(metadata).map_err(|error| error.to_string())?;
+    let path = ownership_path(metadata);
     let mut file = File::options()
         .read(true)
         .write(true)
@@ -180,10 +187,10 @@ pub(crate) fn new_record(
 }
 
 pub(crate) fn read_record(
-    profile: &Path,
+    metadata: &Path,
     expected_thread_id: &str,
 ) -> Option<BrowserSessionRecord> {
-    let bytes = std::fs::read(record_path(profile)).ok()?;
+    let bytes = std::fs::read(record_path(metadata)).ok()?;
     let record: BrowserSessionRecord = serde_json::from_slice(&bytes).ok()?;
     let expected_session_id = session_id(expected_thread_id).ok()?;
     (record.version == SESSION_VERSION
@@ -192,13 +199,61 @@ pub(crate) fn read_record(
         .then_some(record)
 }
 
-pub(crate) fn write_record(profile: &Path, record: &BrowserSessionRecord) -> Result<(), String> {
-    std::fs::create_dir_all(profile).map_err(|error| error.to_string())?;
-    let path = record_path(profile);
-    let temporary = profile.join("session.json.tmp");
+pub(crate) fn write_record(metadata: &Path, record: &BrowserSessionRecord) -> Result<(), String> {
+    std::fs::create_dir_all(metadata).map_err(|error| error.to_string())?;
+    let path = record_path(metadata);
+    let temporary = metadata.join("session.json.tmp");
     let bytes = serde_json::to_vec(record).map_err(|error| error.to_string())?;
     std::fs::write(&temporary, bytes).map_err(|error| error.to_string())?;
     std::fs::rename(temporary, path).map_err(|error| error.to_string())
+}
+
+/// Move state written by builds that stored app metadata in CEF's profile
+/// directory. Only the known metadata files are removed. Any CEF-created
+/// profile data remains untouched, while its last URL is retained in the new
+/// metadata location.
+pub(crate) fn migrate_legacy_metadata(root: &Path, thread_id: &str) -> Result<(), String> {
+    let profile = profile_dir(root, thread_id)?;
+    if !profile.is_dir() {
+        return Ok(());
+    }
+    let metadata = metadata_dir(root, thread_id)?;
+    let legacy_record = read_record(&profile, thread_id);
+    if let Some(record) = legacy_record {
+        if read_record(&metadata, thread_id).is_none() {
+            write_record(&metadata, &record)?;
+        }
+    }
+    let legacy_record_path = record_path(&profile);
+    if legacy_record_path.is_file() {
+        std::fs::remove_file(legacy_record_path).map_err(|error| error.to_string())?;
+    }
+    let owner = ownership_path(&profile);
+    if owner.exists() {
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .open(&owner)
+            .map_err(|error| error.to_string())?;
+        try_lock_file(&file).map_err(|_| {
+            "Internal browser profile is already owned by another process; close that app before reopening this thread".to_string()
+        })?;
+        std::fs::remove_file(&owner).map_err(|error| error.to_string())?;
+        unlock_file(&file);
+    }
+    let temporary = profile.join("session.json.tmp");
+    if temporary.is_file() {
+        std::fs::remove_file(temporary).map_err(|error| error.to_string())?;
+    }
+    if profile
+        .read_dir()
+        .map_err(|error| error.to_string())?
+        .next()
+        .is_none()
+    {
+        std::fs::remove_dir(profile).map_err(|error| error.to_string())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -206,41 +261,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stable_thread_ids_produce_isolated_profile_paths() {
+    fn stable_thread_ids_produce_isolated_profile_and_metadata_paths() {
         let root = Path::new("/browser-root");
         let one = profile_dir(root, "thread-one").unwrap();
         let two = profile_dir(root, "thread-two").unwrap();
+        let one_metadata = metadata_dir(root, "thread-one").unwrap();
+        let two_metadata = metadata_dir(root, "thread-two").unwrap();
         assert_ne!(one, two);
         assert_eq!(one, profile_dir(root, "thread-one").unwrap());
         assert_eq!(one.parent(), two.parent());
+        assert_ne!(one_metadata, two_metadata);
+        assert_eq!(one_metadata, metadata_dir(root, "thread-one").unwrap());
+        assert_ne!(one, one_metadata);
         assert!(!one.to_string_lossy().contains("thread-one"));
     }
 
     #[test]
-    fn records_only_restore_for_the_owning_thread() {
+    fn new_thread_metadata_does_not_create_its_cef_profile() {
         let root = std::env::temp_dir().join(format!("browser-session-{}", uuid::Uuid::new_v4()));
         let profile = profile_dir(&root, "thread-one").unwrap();
+        let metadata = metadata_dir(&root, "thread-one").unwrap();
         let record = new_record("thread-one", Some("http://127.0.0.1/test".into())).unwrap();
-        write_record(&profile, &record).unwrap();
-        assert_eq!(read_record(&profile, "thread-one"), Some(record));
-        assert_eq!(read_record(&profile, "thread-two"), None);
+        write_record(&metadata, &record).unwrap();
+        assert!(!profile.exists());
+        assert_eq!(read_record(&metadata, "thread-one"), Some(record));
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn ownership_recovers_stale_files_but_rejects_live_competitors() {
-        let root = std::env::temp_dir().join(format!("browser-owner-{}", uuid::Uuid::new_v4()));
+    fn restart_reopens_existing_persistent_profile_from_separate_metadata() {
+        let root = std::env::temp_dir().join(format!("browser-reopen-{}", uuid::Uuid::new_v4()));
         let profile = profile_dir(&root, "thread-one").unwrap();
-        let first = claim_ownership(&profile, "thread-one").unwrap();
+        let metadata = metadata_dir(&root, "thread-one").unwrap();
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::write(profile.join("Cookies"), b"cef profile data").unwrap();
+        let record = new_record("thread-one", Some("https://example.com/".into())).unwrap();
+        write_record(&metadata, &record).unwrap();
+        assert_eq!(read_record(&metadata, "thread-one"), Some(record));
+        assert_eq!(
+            std::fs::read(profile.join("Cookies")).unwrap(),
+            b"cef profile data"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ownership_recovers_stale_metadata_but_rejects_live_competitors() {
+        let root = std::env::temp_dir().join(format!("browser-owner-{}", uuid::Uuid::new_v4()));
+        let metadata = metadata_dir(&root, "thread-one").unwrap();
+        let first = claim_ownership(&metadata, "thread-one").unwrap();
         assert_eq!(first.decision, OwnershipDecision::Claimed);
-        assert!(claim_ownership(&profile, "thread-one").is_err());
+        assert!(claim_ownership(&metadata, "thread-one").is_err());
         release_ownership(first);
         std::fs::write(
-            ownership_path(&profile),
+            ownership_path(&metadata),
             br#"{"version":1,"threadId":"old","sessionId":"old","pid":999999}"#,
         )
         .unwrap();
-        let recovered = claim_ownership(&profile, "thread-one").unwrap();
+        let recovered = claim_ownership(&metadata, "thread-one").unwrap();
         assert_eq!(recovered.decision, OwnershipDecision::RecoveredStale);
         release_ownership(recovered);
         std::fs::remove_dir_all(root).unwrap();
@@ -249,15 +327,44 @@ mod tests {
     #[test]
     fn releasing_one_thread_does_not_release_another() {
         let root = std::env::temp_dir().join(format!("browser-close-{}", uuid::Uuid::new_v4()));
-        let one_profile = profile_dir(&root, "thread-one").unwrap();
-        let two_profile = profile_dir(&root, "thread-two").unwrap();
-        let one = claim_ownership(&one_profile, "thread-one").unwrap();
-        let two = claim_ownership(&two_profile, "thread-two").unwrap();
+        let one_metadata = metadata_dir(&root, "thread-one").unwrap();
+        let two_metadata = metadata_dir(&root, "thread-two").unwrap();
+        let one = claim_ownership(&one_metadata, "thread-one").unwrap();
+        let two = claim_ownership(&two_metadata, "thread-two").unwrap();
         release_ownership(one);
-        assert!(!ownership_path(&one_profile).exists());
-        assert!(ownership_path(&two_profile).exists());
-        assert!(claim_ownership(&two_profile, "thread-two").is_err());
+        assert!(!ownership_path(&one_metadata).exists());
+        assert!(ownership_path(&two_metadata).exists());
+        assert!(claim_ownership(&two_metadata, "thread-two").is_err());
         release_ownership(two);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn legacy_metadata_is_migrated_before_cef_creates_the_profile() {
+        let root = std::env::temp_dir().join(format!("browser-migrate-{}", uuid::Uuid::new_v4()));
+        let profile = profile_dir(&root, "thread-one").unwrap();
+        let legacy = new_record("thread-one", Some("https://example.com/".into())).unwrap();
+        write_record(&profile, &legacy).unwrap();
+        std::fs::write(ownership_path(&profile), b"stale owner").unwrap();
+        migrate_legacy_metadata(&root, "thread-one").unwrap();
+        let metadata = metadata_dir(&root, "thread-one").unwrap();
+        assert_eq!(read_record(&metadata, "thread-one"), Some(legacy));
+        assert!(!profile.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn paths_with_spaces_keep_metadata_and_cef_profiles_separate() {
+        let root = std::env::temp_dir().join(format!("browser profile {}", uuid::Uuid::new_v4()));
+        let profile = profile_dir(&root, "thread-one").unwrap();
+        let metadata = metadata_dir(&root, "thread-one").unwrap();
+        write_record(
+            &metadata,
+            &new_record("thread-one", Some("https://example.com/".into())).unwrap(),
+        )
+        .unwrap();
+        assert!(metadata.to_string_lossy().contains("browser profile"));
+        assert!(!profile.exists());
         std::fs::remove_dir_all(root).unwrap();
     }
 }

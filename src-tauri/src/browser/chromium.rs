@@ -41,7 +41,10 @@ struct Engine {
 struct BrowserSession {
     thread_id: String,
     session_id: String,
+    /// CEF exclusively owns this directory.
     profile_dir: PathBuf,
+    /// App-owned URL and process-lock state; never pass this to CEF.
+    metadata_dir: PathBuf,
     ownership: Option<session::OwnershipClaim>,
     browser: Browser,
     _request_context: RequestContext,
@@ -173,7 +176,7 @@ fn emit_page(
     browser: &Browser,
     thread_id: &str,
     session_id: &str,
-    profile_dir: &std::path::Path,
+    metadata_dir: &std::path::Path,
     title: Option<String>,
     error: Option<String>,
 ) {
@@ -181,7 +184,7 @@ fn emit_page(
         return;
     };
     if let Ok(record) = session::new_record(thread_id, Some(url.clone())) {
-        let _ = session::write_record(profile_dir, &record);
+        let _ = session::write_record(metadata_dir, &record);
     }
     let _ = app.emit_to(
         "main",
@@ -203,6 +206,7 @@ fn log_session(event: &str, session: &BrowserSession, decision: &str) {
             "threadId": session.thread_id,
             "browserSessionId": session.session_id,
             "profileDirectory": session.profile_dir,
+            "metadataDirectory": session.metadata_dir,
             "browserProcessId": std::process::id(),
             "browserId": session.browser.identifier(),
             "devtoolsConnection": format!("cef-devtools:{}", session.browser.identifier()),
@@ -281,9 +285,12 @@ fn create_session(
         .as_ref()
         .ok_or("Chromium profile root is unavailable")?;
     let profile_dir = session::profile_dir(root, thread_id)?;
-    std::fs::create_dir_all(&profile_dir).map_err(|error| error.to_string())?;
+    // CEF must create and own the request-context cache directory. Move only
+    // known metadata left by previous builds before CEF sees this path.
+    session::migrate_legacy_metadata(root, thread_id)?;
+    let metadata_dir = session::metadata_dir(root, thread_id)?;
     let session_id = session::session_id(thread_id)?;
-    let ownership = session::claim_ownership(&profile_dir, thread_id)?;
+    let ownership = session::claim_ownership(&metadata_dir, thread_id)?;
     let ownership_decision = ownership.decision;
 
     let parent = app
@@ -311,7 +318,7 @@ fn create_session(
         app.clone(),
         thread_id.to_string(),
         session_id.clone(),
-        profile_dir.clone(),
+        metadata_dir.clone(),
         closed.clone(),
     );
     let context_settings = RequestContextSettings {
@@ -344,6 +351,7 @@ fn create_session(
         thread_id: thread_id.to_string(),
         session_id,
         profile_dir,
+        metadata_dir,
         ownership: Some(ownership),
         browser,
         _request_context: request_context,
@@ -383,14 +391,13 @@ fn ensure_session(
         log_session("session_open", existing, "reconnect");
         return Ok(());
     }
-    let profile = session::profile_dir(
-        engine
-            .root_cache_path
-            .as_ref()
-            .ok_or("Chromium profile root is unavailable")?,
-        thread_id,
-    )?;
-    let restored = session::read_record(&profile, thread_id).and_then(|record| record.url);
+    let root = engine
+        .root_cache_path
+        .as_ref()
+        .ok_or("Chromium profile root is unavailable")?;
+    session::migrate_legacy_metadata(root, thread_id)?;
+    let metadata = session::metadata_dir(root, thread_id)?;
+    let restored = session::read_record(&metadata, thread_id).and_then(|record| record.url);
     let initial_url = requested_url
         .map(str::to_string)
         .or(restored)
@@ -450,14 +457,13 @@ pub async fn get_url(app: &AppHandle, thread_id: String) -> Result<Option<String
             if let Some(browser_session) = engine.sessions.get(&thread_id) {
                 return Ok(current_url(&browser_session.browser));
             }
-            let profile = session::profile_dir(
-                engine
-                    .root_cache_path
-                    .as_ref()
-                    .ok_or("Chromium profile root is unavailable")?,
-                &thread_id,
-            )?;
-            Ok(session::read_record(&profile, &thread_id).and_then(|record| record.url))
+            let root = engine
+                .root_cache_path
+                .as_ref()
+                .ok_or("Chromium profile root is unavailable")?;
+            session::migrate_legacy_metadata(root, &thread_id)?;
+            let metadata = session::metadata_dir(root, &thread_id)?;
+            Ok(session::read_record(&metadata, &thread_id).and_then(|record| record.url))
         })
     })
     .await
@@ -527,7 +533,7 @@ pub async fn close(app: &AppHandle, thread_id: String) -> Result<Option<String>,
             };
             let url = current_url(&browser_session.browser);
             if let Ok(record) = session::new_record(&thread_id, url.clone()) {
-                let _ = session::write_record(&browser_session.profile_dir, &record);
+                let _ = session::write_record(&browser_session.metadata_dir, &record);
             }
             log_session("session_close", &browser_session, "thread-close");
             let ownership = browser_session.ownership.take();
@@ -922,11 +928,13 @@ pub async fn tool_call(
                             "visible": engine.active_thread_id.as_deref() == Some(thread_id.as_str()),
                         }]));
                     }
-                    let profile = session::profile_dir(
-                        engine.root_cache_path.as_ref().ok_or("Chromium profile root is unavailable")?,
-                        &thread_id,
-                    )?;
-                    let Some(record) = session::read_record(&profile, &thread_id) else {
+                    let root = engine
+                        .root_cache_path
+                        .as_ref()
+                        .ok_or("Chromium profile root is unavailable")?;
+                    session::migrate_legacy_metadata(root, &thread_id)?;
+                    let metadata = session::metadata_dir(root, &thread_id)?;
+                    let Some(record) = session::read_record(&metadata, &thread_id) else {
                         return Ok(serde_json::json!([]));
                     };
                     Ok(serde_json::json!([{
@@ -1080,10 +1088,17 @@ wrap_app! {
         fn browser_process_handler(&self) -> Option<BrowserProcessHandler> { Some(PaneProcess::new()) }
         fn on_before_command_line_processing(&self, _process: Option<&CefString>, command_line: Option<&mut CommandLine>) {
             if let Some(command_line) = command_line {
-                // This build embeds a website pane, without Chrome sync or background updates.
+                // This build embeds a website pane, without Chrome sync, background
+                // updates, or local-device discovery. Media Router and Web Bluetooth
+                // otherwise cause Chromium helper processes to issue mDNS queries
+                // (224.0.0.251) even when no page has requested either capability.
                 for flag in ["no-first-run", "disable-background-networking", "disable-component-update", "disable-sync"] {
                     command_line.append_switch(Some(&CefString::from(flag)));
                 }
+                command_line.append_switch_with_value(
+                    Some(&CefString::from("disable-features")),
+                    Some(&CefString::from("MediaRouter,CastMediaRouteProvider,WebBluetooth")),
+                );
             }
         }
     }
@@ -1108,13 +1123,13 @@ wrap_client! {
         app: AppHandle,
         thread_id: String,
         session_id: String,
-        profile_dir: PathBuf,
+        metadata_dir: PathBuf,
         closed: Arc<AtomicBool>
     }
     impl Client {
-        fn load_handler(&self) -> Option<LoadHandler> { Some(PaneLoad::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
-        fn display_handler(&self) -> Option<DisplayHandler> { Some(PaneDisplay::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
-        fn request_handler(&self) -> Option<RequestHandler> { Some(PaneRequest::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.profile_dir.clone())) }
+        fn load_handler(&self) -> Option<LoadHandler> { Some(PaneLoad::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.metadata_dir.clone())) }
+        fn display_handler(&self) -> Option<DisplayHandler> { Some(PaneDisplay::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.metadata_dir.clone())) }
+        fn request_handler(&self) -> Option<RequestHandler> { Some(PaneRequest::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone(), self.metadata_dir.clone())) }
         fn life_span_handler(&self) -> Option<LifeSpanHandler> { Some(PaneLife::new(self.closed.clone())) }
         fn find_handler(&self) -> Option<FindHandler> { Some(PaneFind::new(self.app.clone(), self.thread_id.clone(), self.session_id.clone())) }
         fn keyboard_handler(&self) -> Option<KeyboardHandler> { Some(PaneKeyboard::new(self.app.clone(), self.thread_id.clone())) }
@@ -1159,10 +1174,10 @@ wrap_keyboard_handler! {
 }
 
 wrap_load_handler! {
-    struct PaneLoad { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
+    struct PaneLoad { app: AppHandle, thread_id: String, session_id: String, metadata_dir: PathBuf }
     impl LoadHandler {
         fn on_loading_state_change(&self, browser: Option<&mut Browser>, _loading: i32, _back: i32, _forward: i32) {
-            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None, None); }
+            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.metadata_dir, None, None); }
         }
         fn on_load_end(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, _status: i32) {
             if let Some(frame) = frame.filter(|frame| frame.is_main() != 0) {
@@ -1180,7 +1195,7 @@ wrap_load_handler! {
                             "url": url.to_string(), "loading": false,
                             "error": format!("The website could not be loaded ({})", native as i32),
                         }));
-                    } else if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None,
+                    } else if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.metadata_dir, None,
                         Some(format!("The website could not be loaded ({})", native as i32))); }
                 }
             }
@@ -1189,22 +1204,22 @@ wrap_load_handler! {
 }
 
 wrap_display_handler! {
-    struct PaneDisplay { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
+    struct PaneDisplay { app: AppHandle, thread_id: String, session_id: String, metadata_dir: PathBuf }
     impl DisplayHandler {
         fn on_title_change(&self, browser: Option<&mut Browser>, title: Option<&CefString>) {
-            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, title.map(|title| title.to_string()), None); }
+            if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.metadata_dir, title.map(|title| title.to_string()), None); }
         }
         fn on_address_change(&self, browser: Option<&mut Browser>, frame: Option<&mut Frame>, _url: Option<&CefString>) {
             if frame.is_some_and(|frame| frame.is_main() != 0) {
                 disarm(&self.app);
-                if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None, None); }
+                if let Some(browser) = browser { emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.metadata_dir, None, None); }
             }
         }
     }
 }
 
 wrap_request_handler! {
-    struct PaneRequest { app: AppHandle, thread_id: String, session_id: String, profile_dir: PathBuf }
+    struct PaneRequest { app: AppHandle, thread_id: String, session_id: String, metadata_dir: PathBuf }
     impl RequestHandler {
         fn on_before_browse(&self, _browser: Option<&mut Browser>, frame: Option<&mut Frame>, request: Option<&mut Request>,
             _gesture: i32, _redirect: i32) -> i32 {
@@ -1241,7 +1256,7 @@ wrap_request_handler! {
             _code: i32, _message: Option<&CefString>) {
             disarm(&self.app);
             if let Some(browser) = browser {
-                emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.profile_dir, None,
+                emit_page(&self.app, browser, &self.thread_id, &self.session_id, &self.metadata_dir, None,
                     Some("The Chromium page stopped. Use Reload to reopen it.".into()));
             }
         }

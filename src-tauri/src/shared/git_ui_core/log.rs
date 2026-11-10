@@ -14,7 +14,13 @@ pub(super) async fn get_git_log_inner(
     limit: Option<usize>,
 ) -> Result<GitLogResponse, String> {
     let entry = workspace_entry_for_id(workspaces, &workspace_id).await?;
-    let repo_root = resolve_git_root(&entry)?;
+    tokio::task::spawn_blocking(move || collect_git_log(&entry, limit))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn collect_git_log(entry: &WorkspaceEntry, limit: Option<usize>) -> Result<GitLogResponse, String> {
+    let repo_root = resolve_git_root(entry)?;
     let repo = Repository::open(&repo_root).map_err(|e| e.to_string())?;
     let max_items = limit.unwrap_or(40);
     let mut revwalk = repo.revwalk().map_err(|e| e.to_string())?;

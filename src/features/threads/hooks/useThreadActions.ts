@@ -22,7 +22,7 @@ import {
   buildThreadSummaryFromThread,
   extractThreadFromResponse,
 } from "@threads/utils/threadSummary";
-import { asString } from "@threads/utils/threadNormalize";
+import { asString, extractRpcErrorMessage } from "@threads/utils/threadNormalize";
 import {
   getParentThreadIdFromThread,
   shouldHideSubagentThreadFromSidebar,
@@ -320,8 +320,11 @@ export function useThreadActions({
               hydrationPlan.lastMessageTimestamp,
             );
           }
+        } else {
+          throw new Error(
+            extractRpcErrorMessage(response) ?? "Codex did not return the requested thread.",
+          );
         }
-        if (wasEvicted && !thread) return null;
         loadedThreadsRef.current[threadId] = true;
         return threadId;
       } catch (error) {

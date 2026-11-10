@@ -105,11 +105,20 @@ export function useGitStatus(activeWorkspace: WorkspaceInfo | null) {
       return;
     }
 
-    const fetchStatus = () => {
-      refresh()?.catch(() => {});
+    let pollInFlight = false;
+    const fetchStatus = async () => {
+      if (pollInFlight) {
+        return;
+      }
+      pollInFlight = true;
+      try {
+        await refresh();
+      } finally {
+        pollInFlight = false;
+      }
     };
 
-    fetchStatus();
+    void fetchStatus();
     const interval = window.setInterval(fetchStatus, REFRESH_INTERVAL_MS);
 
     return () => {

@@ -21,6 +21,7 @@ import { useMenuController } from "../hooks/useMenuController";
 
 type MainHeaderProps = {
   workspace: WorkspaceInfo;
+  threadTitle?: string | null;
   parentName?: string | null;
   worktreeLabel?: string | null;
   disableBranchMenu?: boolean;
@@ -74,6 +75,7 @@ type MainHeaderProps = {
 
 export function MainHeader({
   workspace,
+  threadTitle = null,
   parentName = null,
   worktreeLabel = null,
   disableBranchMenu = false,
@@ -151,6 +153,7 @@ export function MainHeader({
     () => `cd "${relativeWorktreePath}"`,
     [relativeWorktreePath],
   );
+  const displayThreadTitle = threadTitle?.trim() || null;
 
   useEffect(() => {
     if (!infoOpen && renameOnCancel) {
@@ -192,9 +195,13 @@ export function MainHeader({
             {parentName ? parentName : workspace.name}
           </span>
           <span className="workspace-separator" aria-hidden>
-            ›
+            {displayThreadTitle ? "-" : "›"}
           </span>
-          {disableBranchMenu ? (
+          {displayThreadTitle ? (
+            <span className="workspace-thread-title" title={displayThreadTitle}>
+              {displayThreadTitle}
+            </span>
+          ) : disableBranchMenu ? (
             <div className="workspace-branch-static-row" ref={infoRef}>
               <MenuTrigger
                 isOpen={infoOpen}

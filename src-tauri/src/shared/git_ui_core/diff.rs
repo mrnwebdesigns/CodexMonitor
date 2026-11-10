@@ -336,7 +336,13 @@ pub(super) async fn get_git_status_inner(
     workspace_id: String,
 ) -> Result<Value, String> {
     let entry = workspace_entry_for_id(workspaces, &workspace_id).await?;
-    let repo_root = resolve_git_root(&entry)?;
+    tokio::task::spawn_blocking(move || collect_git_status(&entry))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn collect_git_status(entry: &WorkspaceEntry) -> Result<Value, String> {
+    let repo_root = resolve_git_root(entry)?;
     let repo = Repository::open(&repo_root).map_err(|e| e.to_string())?;
 
     let branch_name = repo

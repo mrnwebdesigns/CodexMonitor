@@ -125,6 +125,11 @@ Do not reintroduce duplicated modal/toast/panel/popover shell styling in feature
 - If conflicts impact correctness, call them out and choose the safest path.
 - Fix root cause, not band-aids.
 
+## Installed App Update Permission
+
+- Building or deploying an update does not authorize quitting, closing, replacing, restarting, or launching the installed Codex Monitor app.
+- Before an update requires an app restart or replacement, explicitly ask the owner for permission in the current conversation. If permission is not granted, leave the build ready and report the required next step.
+
 ## Validation Matrix
 
 Run validations based on touched areas:

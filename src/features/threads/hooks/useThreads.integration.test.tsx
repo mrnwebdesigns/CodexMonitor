@@ -219,6 +219,28 @@ describe("useThreads UX integration", () => {
     }
   });
 
+  it("can reopen a saved thread after the engine rejects the first resume", async () => {
+    vi.mocked(resumeThread)
+      .mockResolvedValueOnce({ error: { message: "History temporarily unavailable" } })
+      .mockResolvedValueOnce({
+        result: { thread: {
+          id: "saved",
+          turns: [{ items: [{ type: "agentMessage", id: "answer", text: "Saved reply" }] }],
+        } },
+      });
+    const { result } = renderHook(() =>
+      useThreads({ activeWorkspace: workspace, onWorkspaceConnected: vi.fn() }),
+    );
+
+    await act(async () => { result.current.setActiveThreadId("saved"); });
+    expect(result.current.hasLocalThreadSnapshot("saved")).toBe(false);
+
+    await act(async () => { result.current.setActiveThreadId("saved"); });
+    expect(result.current.activeItems).toEqual([
+      expect.objectContaining({ id: "answer", text: "Saved reply" }),
+    ]);
+  });
+
   it("applies runtime codex args before start and selection resume", async () => {
     const ensureWorkspaceRuntimeCodexArgs = vi.fn(async () => undefined);
     vi.mocked(startThread).mockResolvedValue({

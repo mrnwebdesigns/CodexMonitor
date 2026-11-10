@@ -76,6 +76,26 @@ describe("useGitStatus", () => {
     unmount();
   });
 
+  it("waits for a slow poll before polling again", async () => {
+    const getGitStatusMock = vi.mocked(getGitStatus);
+    let finishFirst!: (value: ReturnType<typeof makeStatus>) => void;
+    getGitStatusMock
+      .mockReturnValueOnce(new Promise((resolve) => { finishFirst = resolve; }))
+      .mockResolvedValueOnce(makeStatus("updated"));
+
+    const { result } = renderHook(() => useGitStatus(workspace));
+
+    await act(async () => { vi.advanceTimersByTime(9000); });
+    expect(getGitStatusMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => { finishFirst(makeStatus("main")); });
+    expect(result.current.status.branchName).toBe("main");
+
+    await act(async () => { vi.advanceTimersByTime(3000); });
+    expect(getGitStatusMock).toHaveBeenCalledTimes(2);
+    expect(result.current.status.branchName).toBe("updated");
+  });
+
   it("refresh triggers a new fetch", async () => {
     const getGitStatusMock = vi.mocked(getGitStatus);
     getGitStatusMock

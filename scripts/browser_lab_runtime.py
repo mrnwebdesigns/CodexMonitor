@@ -80,7 +80,7 @@ def prepare(root):
     return tools, cef
 
 
-def bundle(root, cef, app, identifier, version):
+def bundle(root, cef, app, identifier, version, signing_identity="-"):
     info_path = app / "Contents/Info.plist"
     info = plistlib.loads(info_path.read_bytes())
     if info.get("CFBundleIdentifier") != identifier:
@@ -124,5 +124,5 @@ def bundle(root, cef, app, identifier, version):
     # CEF must see MallocNanoZone=0 in browser and helper processes.
     info.setdefault("LSEnvironment", {})["MallocNanoZone"] = "0"
     info_path.write_bytes(plistlib.dumps(info))
-    subprocess.run(["/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
+    subprocess.run(["/usr/bin/codesign", "--force", "--deep", "--sign", signing_identity, str(app)], check=True)
     subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)], check=True)

@@ -34,14 +34,15 @@ export function useGitLog(
 ) {
   const [state, setState] = useState<GitLogState>(emptyState);
   const requestIdRef = useRef(0);
-  const workspaceIdRef = useRef<string | null>(activeWorkspace?.id ?? null);
+  const workspaceId = activeWorkspace?.id ?? null;
+  const gitRoot = activeWorkspace?.settings.gitRoot;
+  const workspaceIdRef = useRef(workspaceId);
 
   const refresh = useCallback(async () => {
-    if (!activeWorkspace) {
+    if (!workspaceId) {
       setState(emptyState);
       return;
     }
-    const workspaceId = activeWorkspace.id;
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
@@ -84,29 +85,38 @@ export function useGitLog(
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [activeWorkspace]);
+  }, [workspaceId]);
 
   useEffect(() => {
-    const workspaceId = activeWorkspace?.id ?? null;
     if (workspaceIdRef.current !== workspaceId) {
       workspaceIdRef.current = workspaceId;
       requestIdRef.current += 1;
       setState(emptyState);
     }
-  }, [activeWorkspace?.id]);
+  }, [workspaceId]);
 
   useEffect(() => {
-    if (!enabled || !activeWorkspace) {
+    if (!enabled || !workspaceId) {
       return;
     }
-    void refresh();
-    const interval = window.setInterval(() => {
-      refresh().catch(() => {});
-    }, REFRESH_INTERVAL_MS);
+    let pollInFlight = false;
+    const fetchLog = async () => {
+      if (pollInFlight) {
+        return;
+      }
+      pollInFlight = true;
+      try {
+        await refresh();
+      } finally {
+        pollInFlight = false;
+      }
+    };
+    void fetchLog();
+    const interval = window.setInterval(fetchLog, REFRESH_INTERVAL_MS);
     return () => {
       window.clearInterval(interval);
     };
-  }, [activeWorkspace, enabled, refresh]);
+  }, [enabled, gitRoot, refresh, workspaceId]);
 
   return {
     entries: state.entries,

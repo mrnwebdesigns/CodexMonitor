@@ -36,6 +36,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / ".mrn-local/tauri.conf.json")
     parser.add_argument("--codex-home", type=Path, default=ROOT / ".mrn-local/codex-home")
+    parser.add_argument(
+        "--signing-identity",
+        default=os.environ.get("CODEX_MONITOR_SIGNING_IDENTITY", "-"),
+        help="macOS codesigning identity; defaults to ad-hoc signing for local development",
+    )
     args = parser.parse_args()
     config = args.config.resolve(strict=True)
     codex_home = args.codex_home.resolve(strict=True)
@@ -78,7 +83,7 @@ def main():
     app = ROOT / "src-tauri/target/debug/bundle/macos" / f"{NAME}.app"
     install_launcher(app, codex_home)
     version = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text())["version"]
-    bundle(ROOT, cef, app, IDENTIFIER, version)
+    bundle(ROOT, cef, app, IDENTIFIER, version, args.signing_identity)
     print(app)
 
 

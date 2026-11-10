@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 
 import type { WorkspaceInfo } from "../../../types";
 import { sidebarColorStyle, type SidebarColor } from "@app/utils/sidebarColors";
+import { ProjectFavicon } from "./ProjectFavicon";
 
 type WorkspaceCardProps = {
   workspace: WorkspaceInfo;
@@ -63,6 +64,7 @@ export function WorkspaceCard({
         <div className="workspace-copy">
           <div className="workspace-name-row">
             <div className="workspace-title">
+              <ProjectFavicon website={workspace.settings.projectInfo?.website} />
               <span className="workspace-name">{workspaceName ?? workspace.name}</span>
               <button
                 className={`workspace-toggle ${isCollapsed ? "" : "expanded"}`}

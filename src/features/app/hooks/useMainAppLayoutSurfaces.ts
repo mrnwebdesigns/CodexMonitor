@@ -383,6 +383,12 @@ function buildPrimarySurface({
   showDebugButton,
   handleDebugClick,
 }: MainAppLayoutSurfacesContext): LayoutNodesOptions["primary"] {
+  const activeThreadTitle = activeThreadId
+    ? threadsByWorkspace[activeWorkspace?.id ?? ""]?.find(
+        (thread) => thread.id === activeThreadId,
+      )?.name ?? "Untitled thread"
+    : null;
+
   return {
     sidebarProps: {
       workspaces,
@@ -622,6 +628,7 @@ function buildPrimarySurface({
     mainHeaderProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
+          threadTitle: activeThreadTitle,
           parentName: worktreeState.activeParentWorkspace?.name ?? null,
           worktreeLabel: worktreeState.worktreeLabel,
           worktreeRename: worktreeState.worktreeRename ?? undefined,

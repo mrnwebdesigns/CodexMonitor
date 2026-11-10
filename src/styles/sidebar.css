@@ -1004,9 +1004,17 @@
 
 .workspace-title {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.project-favicon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
 .workspace-toggle {

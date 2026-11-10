@@ -465,6 +465,17 @@
   white-space: nowrap;
 }
 
+.workspace-thread-title {
+  color: var(--text-subtle);
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+  max-width: min(46vw, 640px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .workspace-separator {
   color: var(--text-faint);
   font-size: 10px;
