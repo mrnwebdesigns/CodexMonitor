@@ -1529,6 +1529,8 @@ export default function MainApp() {
           groupName: workspaceGroups.find((group) => group.id === activeWorkspace.settings.groupId)?.name,
           branch: currentBranch,
           onSaveProjectInfo: (id, projectInfo) => updateWorkspaceSettings(id, { projectInfo }),
+          workspaceGroups,
+          onAssignWorkspaceGroup: assignWorkspaceGroup,
           timeThreadsByWorkspace: threadsByWorkspace,
           onOpenWebsite: !isCompact && activeThreadId ? (url) => browser.openWebsite(activeWorkspace.id, activeThreadId, url) : undefined,
           showGitInitBanner,

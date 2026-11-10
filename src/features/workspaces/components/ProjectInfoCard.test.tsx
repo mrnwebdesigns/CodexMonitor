@@ -103,4 +103,15 @@ describe("project information", () => {
     expect(screen.getByText("devbox")).toBeTruthy();
     expect(screen.getAllByText("Not applicable")).toHaveLength(2);
   });
+
+  it("assigns a project group from the project home editor", async () => {
+    const onAssignGroup = vi.fn().mockResolvedValue(undefined);
+    render(<ProjectInfoCard workspace={workspace} onSave={vi.fn()} workspaceGroups={[{ id: "clients", name: "Clients" }]} onAssignGroup={onAssignGroup} />);
+
+    expect(screen.getByText("Ungrouped")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add details" }));
+    fireEvent.change(screen.getByLabelText("Project group"), { target: { value: "clients" } });
+
+    await waitFor(() => expect(onAssignGroup).toHaveBeenCalledWith("test-project", "clients"));
+  });
 });

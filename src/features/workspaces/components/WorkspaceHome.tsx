@@ -17,6 +17,7 @@ import type {
   WorkspaceInfo,
   ProjectInfo,
   ThreadSummary,
+  WorkspaceGroup,
 } from "../../../types";
 import { ComposerInput } from "../../composer/components/ComposerInput";
 import { useComposerImages } from "../../composer/hooks/useComposerImages";
@@ -44,6 +45,8 @@ type WorkspaceHomeProps = {
   groupName?: string | null;
   branch?: string | null;
   onSaveProjectInfo?: (id: string, info: ProjectInfo) => Promise<unknown>;
+  workspaceGroups?: WorkspaceGroup[];
+  onAssignWorkspaceGroup?: (id: string, groupId: string | null) => Promise<unknown>;
   onOpenWebsite?: (url: string) => void;
   timeThreadsByWorkspace?: Record<string, ThreadSummary[]>;
   showGitInitBanner: boolean;
@@ -113,6 +116,8 @@ export function WorkspaceHome({
   groupName,
   branch,
   onSaveProjectInfo,
+  workspaceGroups,
+  onAssignWorkspaceGroup,
   onOpenWebsite,
   timeThreadsByWorkspace,
   showGitInitBanner,
@@ -381,7 +386,7 @@ export function WorkspaceHome({
         {branch && <span>Branch <strong>{branch}</strong></span>}
         <span>{recentThreadInstances.length} recent chat{recentThreadInstances.length === 1 ? "" : "s"}</span>
       </div>
-      {onSaveProjectInfo && <ProjectInfoCard workspace={workspace} onSave={onSaveProjectInfo} onOpenWebsite={onOpenWebsite} />}
+      {onSaveProjectInfo && <ProjectInfoCard workspace={workspace} onSave={onSaveProjectInfo} workspaceGroups={workspaceGroups} onAssignGroup={onAssignWorkspaceGroup} onOpenWebsite={onOpenWebsite} />}
       <ProjectTimeCard workspaceId={workspace.id} threadsByWorkspace={timeThreadsByWorkspace} onOpenThread={onSelectInstance} />
 
       {showGitInitBanner && (

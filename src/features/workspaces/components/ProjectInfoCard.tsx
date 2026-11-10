@@ -1,7 +1,8 @@
+import { useState } from "react";
 import Globe from "lucide-react/dist/esm/icons/globe";
 import Pencil from "lucide-react/dist/esm/icons/pencil";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
-import type { ProjectInfo, ProjectType, WorkspaceInfo } from "@/types";
+import type { ProjectInfo, ProjectType, WorkspaceGroup, WorkspaceInfo } from "@/types";
 import { PanelHeader } from "@/features/design-system/components/panel/PanelPrimitives";
 import { normalizeBrowserUrl } from "@/features/browser/utils/browserAnnotations";
 import { projectTypeLabels, useProjectInfo } from "../hooks/useProjectInfo";
@@ -16,18 +17,38 @@ const connectionFields = [
 type Props = {
   workspace: WorkspaceInfo;
   onSave: (id: string, info: ProjectInfo) => Promise<unknown>;
+  workspaceGroups?: WorkspaceGroup[];
+  onAssignGroup?: (id: string, groupId: string | null) => Promise<unknown>;
   onOpenWebsite?: (url: string) => void;
 };
 
-export function ProjectInfoCard({ workspace, onSave, onOpenWebsite }: Props) {
+export function ProjectInfoCard({ workspace, onSave, workspaceGroups = [], onAssignGroup, onOpenWebsite }: Props) {
   const state = useProjectInfo(workspace, onSave);
+  const [assigningGroup, setAssigningGroup] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
   let website: string | null = null;
   try { if (state.info.website) website = normalizeBrowserUrl(state.info.website); } catch { /* Invalid draft URLs are validated on save. */ }
   const hasInfo = Object.values(state.info).some((value) => typeof value === "string" && value.trim()) || Boolean(state.info.discovery);
-  const busy = state.saving || state.discovering;
+  const busy = state.saving || state.discovering || assigningGroup;
   const detectedType = state.info.discovery?.projectType.value as ProjectType | undefined;
   const typeLabel = projectTypeLabels[state.info.projectType || detectedType || ""] || "Unknown";
   const discovery = state.info.discovery;
+  const groupId = workspaceGroups.some((group) => group.id === workspace.settings.groupId)
+    ? workspace.settings.groupId ?? ""
+    : "";
+  const groupName = workspaceGroups.find((group) => group.id === groupId)?.name;
+  const assignGroup = async (nextGroupId: string) => {
+    if (!onAssignGroup || assigningGroup || nextGroupId === groupId) return;
+    setAssigningGroup(true);
+    setGroupError(null);
+    try {
+      await onAssignGroup(workspace.id, nextGroupId || null);
+    } catch (reason) {
+      setGroupError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAssigningGroup(false);
+    }
+  };
   return <section className="project-info" aria-label="Project information">
     <PanelHeader className="project-info-header">
       <div><h2>Project information</h2><p>The details you want close at hand.</p></div>
@@ -40,6 +61,10 @@ export function ProjectInfoCard({ workspace, onSave, onOpenWebsite }: Props) {
     {state.editing ? <form className="project-info-form" onSubmit={(event) => { event.preventDefault(); void state.save(); }}>
       <fieldset disabled={busy}>
         <div className="project-info-fields">
+          {onAssignGroup && <label>Project group<select aria-label="Project group" value={groupId} onChange={(event) => void assignGroup(event.target.value)}>
+            <option value="">Ungrouped</option>
+            {workspaceGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          </select><small>{assigningGroup ? "Saving group…" : "Controls where this project appears in the Projects sidebar."}</small></label>}
           <label>Client / owner<input value={state.info.client} maxLength={200} onChange={(event) => state.change("client", event.target.value)} placeholder="Client or internal team" /></label>
           <label>Website<input value={state.info.website} maxLength={2048} onChange={(event) => state.change("website", event.target.value)} placeholder="example.com or localhost:3000" spellCheck={false} autoCapitalize="none" /></label>
           <label>Project type<select aria-label="Project type" value={state.info.projectType} onChange={(event) => state.change("projectType", event.target.value)}>
@@ -50,12 +75,13 @@ export function ProjectInfoCard({ workspace, onSave, onOpenWebsite }: Props) {
           <label className="project-info-wide">Overview<textarea rows={2} maxLength={4000} value={state.info.summary} onChange={(event) => state.change("summary", event.target.value)} placeholder="What this project is for and what matters most." /></label>
           <label className="project-info-wide">Working notes<textarea rows={4} maxLength={12000} value={state.info.notes} onChange={(event) => state.change("notes", event.target.value)} placeholder="Next steps, important links, and things to remember." /></label>
         </div>
-        {state.error && <p className="workspace-home-error" role="alert">{state.error}</p>}
+        {(state.error || groupError) && <p className="workspace-home-error" role="alert">{state.error || groupError}</p>}
         <div className="project-info-form-actions"><span>Notes are for your reference; agent instructions are below.</span><button type="button" className="ghost" onClick={state.cancel}>Cancel</button><button type="submit" className="primary">{state.saving ? "Saving…" : "Save details"}</button></div>
       </fieldset>
     </form> : <div className="project-info-content">
       {!hasInfo && <p className="project-info-empty">Add a project overview, website, and working notes so everything is ready when you return.</p>}
       <dl className="project-info-connections">
+        {onAssignGroup && <div><dt>Project group</dt><dd>{groupName || "Ungrouped"}<p>Controls where this project appears in the Projects sidebar.</p></dd></div>}
         <div><dt>Project type</dt><dd>{typeLabel}<p>{state.info.projectType ? "Selected project type" : discovery?.projectType.detail || "Not discovered yet"}</p></dd></div>
         {connectionFields.map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{state.info[key] || discovery?.[key].value || "Unknown"}<p>{state.info[key] ? "Saved value" : discovery?.[key].detail || "Not checked"}</p></dd></div>)}
       </dl>
