@@ -489,6 +489,23 @@ describe("useAppServerEvents", () => {
       listener?.({
         workspace_id: "ws-1",
         message: {
+          method: "account/rateLimits/updated",
+          params: {
+            rateLimits: { primary: { usedPercent: 30 } },
+            rateLimitResetCredits: { availableCount: 1, credits: null },
+          },
+        },
+      });
+    });
+    expect(handlers.onAccountRateLimitsUpdated).toHaveBeenCalledWith("ws-1", {
+      primary: { usedPercent: 30 },
+      rateLimitResetCredits: { availableCount: 1, credits: null },
+    });
+
+    act(() => {
+      listener?.({
+        workspace_id: "ws-1",
+        message: {
           method: "account/updated",
           params: { authMode: "chatgpt" },
         },

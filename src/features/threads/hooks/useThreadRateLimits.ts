@@ -52,12 +52,20 @@ export function useThreadRateLimits({
           (response?.rateLimits as Record<string, unknown> | undefined) ??
           (response?.rate_limits as Record<string, unknown> | undefined);
         if (rateLimits) {
+          const resetCredits =
+            response?.result?.rateLimitResetCredits ??
+            response?.result?.rate_limit_reset_credits ??
+            response?.rateLimitResetCredits ??
+            response?.rate_limit_reset_credits;
+          const rateLimitsWithResetCredits = resetCredits === undefined
+            ? rateLimits
+            : { ...rateLimits, rateLimitResetCredits: resetCredits };
           const previousRateLimits =
             getCurrentRateLimitsRef.current?.(targetId) ?? null;
           dispatch({
             type: "setRateLimits",
             workspaceId: targetId,
-            rateLimits: normalizeRateLimits(rateLimits, previousRateLimits),
+            rateLimits: normalizeRateLimits(rateLimitsWithResetCredits, previousRateLimits),
           });
         }
       } catch (error) {

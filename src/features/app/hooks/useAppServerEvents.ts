@@ -481,7 +481,13 @@ export function useAppServerEvents(handlers: AppServerEventHandlers) {
           (params.rateLimits as Record<string, unknown> | undefined) ??
           (params.rate_limits as Record<string, unknown> | undefined);
         if (rateLimits) {
-          currentHandlers.onAccountRateLimitsUpdated?.(workspace_id, rateLimits);
+          const resetCredits = params.rateLimitResetCredits ?? params.rate_limit_reset_credits;
+          currentHandlers.onAccountRateLimitsUpdated?.(
+            workspace_id,
+            resetCredits === undefined
+              ? rateLimits
+              : { ...rateLimits, rateLimitResetCredits: resetCredits },
+          );
         }
         return;
       }

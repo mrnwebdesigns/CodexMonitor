@@ -96,6 +96,47 @@ describe("useThreadRateLimits", () => {
     });
   });
 
+  it("preserves reset credits returned beside the rate-limit snapshot", async () => {
+    const dispatch = vi.fn();
+    const rawRateLimits = {
+      primary: { usedPercent: 23, windowDurationMins: 10080, resetsAt: 777 },
+    };
+
+    vi.mocked(getAccountRateLimits).mockResolvedValue({
+      result: {
+        rateLimits: rawRateLimits,
+        rateLimitResetCredits: {
+          availableCount: 1,
+          credits: [{ id: "reset-1", title: "Full reset", expiresAt: 12345 }],
+        },
+      },
+    });
+
+    const { result } = renderHook(() =>
+      useThreadRateLimits({
+        activeWorkspaceId: "ws-1",
+        activeWorkspaceConnected: false,
+        dispatch,
+      }),
+    );
+
+    await act(async () => {
+      await result.current.refreshAccountRateLimits();
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "setRateLimits",
+      workspaceId: "ws-1",
+      rateLimits: normalizeRateLimits({
+        ...rawRateLimits,
+        rateLimitResetCredits: {
+          availableCount: 1,
+          credits: [{ id: "reset-1", title: "Full reset", expiresAt: 12345 }],
+        },
+      }),
+    });
+  });
+
   it("does not auto-refresh again when accessor callback identity changes", async () => {
     const dispatch = vi.fn();
 
