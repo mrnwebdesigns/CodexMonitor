@@ -783,7 +783,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("keeps a project visible during search when only older pages may contain matches", async () => {
+  it("does not show projects merely because they have older thread pages", async () => {
     render(
       <Sidebar
         {...baseProps}
@@ -824,9 +824,10 @@ describe("Sidebar", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Alpha Project")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Search older..." })).toBeTruthy();
+      expect(screen.queryByText("Alpha Project")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Search older..." })).toBeNull();
       expect(screen.queryByText("Current page thread")).toBeNull();
+      expect(screen.getByText("No titles or project names match your search.")).toBeTruthy();
     });
   });
 

@@ -349,8 +349,7 @@ export const Sidebar = memo(function Sidebar({
       result.set(
         workspace.id,
         isWorkspaceMatch(workspace) ||
-          Boolean(workspaceHasMatchingThreadById.get(workspace.id)) ||
-          Boolean(threadListCursorByWorkspace[workspace.id]),
+          Boolean(workspaceHasMatchingThreadById.get(workspace.id)),
       );
     });
     return result;
@@ -358,7 +357,6 @@ export const Sidebar = memo(function Sidebar({
     isSearchActive,
     isWorkspaceMatch,
     workspaceHasMatchingThreadById,
-    threadListCursorByWorkspace,
     workspaces,
   ]);
 
