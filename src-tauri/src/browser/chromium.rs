@@ -333,6 +333,13 @@ fn create_session(
     if let Some(host) = browser.host() {
         host.set_accessibility_state(State::from(sys::cef_state_t::STATE_ENABLED));
     }
+    // `WindowInfo::hidden` is not applied consistently by CEF on macOS while
+    // the child view is being attached. Hide it again once it has a native
+    // view so a tool-opened page can never flash at CEF's (0, 0) fallback
+    // rectangle before BrowserPanel supplies its measured bounds.
+    if hidden {
+        macos::set_visible(&browser, false)?;
+    }
     let browser_session = BrowserSession {
         thread_id: thread_id.to_string(),
         session_id,

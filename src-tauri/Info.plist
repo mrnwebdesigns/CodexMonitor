@@ -8,5 +8,7 @@
     <string>Codex Monitor</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Allow access to the microphone for dictation.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Allow Chromium to discover nearby Bluetooth devices when a website requests it.</string>
   </dict>
 </plist>

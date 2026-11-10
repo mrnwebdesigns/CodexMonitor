@@ -111,6 +111,10 @@ def bundle(root, cef, app, identifier, version):
             "LSUIElement": True,
             "LSMinimumSystemVersion": "11.0",
             "NSSupportsAutomaticGraphicsSwitching": True,
+            # Chromium initializes Bluetooth discovery in helper processes on
+            # current macOS releases. TCC aborts the whole application if the
+            # requesting helper lacks this required usage description.
+            "NSBluetoothAlwaysUsageDescription": "Allow Chromium to discover nearby Bluetooth devices when a website requests it.",
         }
         (contents / "Info.plist").write_bytes(plistlib.dumps(helper_info))
     for name in ["CREDITS.html", "LICENSE.txt"]:
