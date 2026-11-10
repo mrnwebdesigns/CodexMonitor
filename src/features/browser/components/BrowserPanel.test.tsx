@@ -94,6 +94,20 @@ describe("browser feedback workflow", () => {
     await waitFor(() => expect(native.browserNavigate).toHaveBeenCalledWith("thread-one", "http://localhost:3000/", expect.any(Object)));
   });
 
+  it("keeps tabs scoped to the thread and restores a tab's address when selected", async () => {
+    render(<BrowserPanel {...props()} threadId="tabs-thread" />);
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    fireEvent.change(screen.getByLabelText("Website address"), { target: { value: "first.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    await waitFor(() => expect(native.browserNavigate).toHaveBeenLastCalledWith("tabs-thread", "https://first.test/", expect.any(Object)));
+
+    fireEvent.click(screen.getByRole("button", { name: "New tab" }));
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect((screen.getByLabelText("Website address") as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getAllByRole("tab")[0]);
+    await waitFor(() => expect(native.browserNavigate).toHaveBeenLastCalledWith("tabs-thread", "https://first.test/", expect.any(Object)));
+  });
+
   it("finds text with Command-F, cycles matches, and clears highlights on Escape", async () => {
     render(<BrowserPanel {...props()} />);
     act(() => events.page?.({ threadId: "thread-one", url: "https://example.com/", loading: false }));

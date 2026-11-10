@@ -13,6 +13,20 @@ import {
 
 const RESIZE_GRIP_SIZE = 20;
 
+type BrowserTab = { id: string; url: string | null; title: string };
+
+// The native pane can only display one page at a time, but each browser tab is
+// scoped to its Codex thread and restored when selected. Keeping this outside
+// the panel also preserves tabs while switching between chats or closing the
+// browser panel.
+const tabsByThread = new Map<string, BrowserTab[]>();
+
+function tabLabel(tab: BrowserTab) {
+  if (tab.title && tab.title !== "Browser") return tab.title;
+  try { return tab.url ? new URL(tab.url).hostname : "New tab"; }
+  catch { return tab.url || "New tab"; }
+}
+
 function clampDimension(value: number) {
   return Math.min(MAX_DIMENSION, Math.max(MIN_DIMENSION, Math.round(value)));
 }
@@ -52,6 +66,8 @@ export type BrowserPanelProps = {
 };
 
 export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavigationHandled, annotations, visible, canInsert, onAddAnnotation, onRemoveAnnotation, onInsert, onClose }: BrowserPanelProps) {
+  const [tabs, setTabs] = useState<BrowserTab[]>(() => tabsByThread.get(threadId) || []);
+  const [activeTabId, setActiveTabId] = useState<string | null>(() => tabsByThread.get(threadId)?.[0]?.id || null);
   const [address, setAddress] = useState("");
   const [restoreUrl, setRestoreUrl] = useState<string | null>(null);
   const [pageTitle, setPageTitle] = useState("Browser");
@@ -83,10 +99,19 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   const findInput = useRef<HTMLInputElement>(null);
   const navigationRequested = useRef(Boolean(navigationRequest));
   const pageUrl = useRef<string | null>(null);
+  const activeTabRef = useRef<string | null>(activeTabId);
   const annotationSession = useRef(`${workspaceId}:${threadId}`);
   const visibleRef = useRef(visible);
   const layoutRevision = useRef(0);
   visibleRef.current = visible;
+  activeTabRef.current = activeTabId;
+  const updateTabs = useCallback((update: (current: BrowserTab[]) => BrowserTab[]) => {
+    setTabs((current) => {
+      const next = update(current);
+      tabsByThread.set(threadId, next);
+      return next;
+    });
+  }, [threadId]);
   // Native web content has its own view; keep its rectangle aligned with this slot.
   const syncBounds = useCallback(async () => {
     const revision = layoutRevision.current;
@@ -159,6 +184,13 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
     const sessionKey = `${workspaceId}:${threadId}`;
     if (annotationSession.current !== sessionKey) {
       annotationSession.current = sessionKey;
+      const remembered = tabsByThread.get(threadId) || [];
+      setTabs(remembered);
+      setActiveTabId((current) => {
+        const next = remembered.some((tab) => tab.id === current) ? current : remembered[0]?.id || null;
+        activeTabRef.current = next;
+        return next;
+      });
       discard();
       setSelection(null); setComment(""); setAnnotating(false);
       void browserAction(threadId, "browse").catch(() => {});
@@ -184,6 +216,16 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
       }
       setAddress(event.url); setHasPage(true); setLoading(event.loading);
       if (event.title) setPageTitle(event.title);
+      const title = event.title || "Browser";
+      updateTabs((current) => {
+        const id = activeTabRef.current || crypto.randomUUID();
+        const existing = current.find((tab) => tab.id === id);
+        if (!existing) {
+          setActiveTabId(id);
+          return [...current, { id, url: event.url, title }];
+        }
+        return current.map((tab) => tab.id === id ? { ...tab, url: event.url, title: event.title || tab.title } : tab);
+      });
       if (event.error) { setError(event.error); setLoading(false); }
       setAnnotating(false);
     });
@@ -198,7 +240,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
       unsubscribeSelection();
       void browserSetVisible(threadId, false).catch(() => {});
     };
-  }, [capture, discard, navigationRequest, threadId]);
+  }, [capture, discard, navigationRequest, threadId, updateTabs]);
 
   useEffect(() => {
     if (!hasPage || !visible) { void browserSetVisible(threadId, false).catch(() => {}); return; }
@@ -227,7 +269,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
     return () => window.clearTimeout(timer);
   }, [loading]);
 
-  const navigateTo = useCallback(async (value: string) => {
+  const navigateTo = useCallback(async (value: string, tabId = activeTabRef.current) => {
     try {
       const url = normalizeBrowserUrl(value);
       navigationRequested.current = true;
@@ -238,9 +280,50 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
       const { bounds, device: emulation } = measureViewport(rect, device);
       if (emulation) await browserNavigate(threadId, url, bounds, emulation);
       else await browserNavigate(threadId, url, bounds);
+      const id = tabId || crypto.randomUUID();
+      if (id !== activeTabRef.current) {
+        activeTabRef.current = id;
+        setActiveTabId(id);
+      }
+      updateTabs((current) => {
+        const tab = { id, url, title: current.find((item) => item.id === id)?.title || "Browser" };
+        return current.some((item) => item.id === id) ? current.map((item) => item.id === id ? tab : item) : [...current, tab];
+      });
       setAddress(url); setHasPage(true);
     } catch (reason) { setLoading(false); setError(reason instanceof Error ? reason.message : String(reason)); }
-  }, [device, discard, threadId]);
+  }, [device, discard, threadId, updateTabs]);
+
+  const openNewTab = useCallback(() => {
+    const id = crypto.randomUUID();
+    updateTabs((current) => [...current, { id, url: null, title: "New tab" }]);
+    activeTabRef.current = id;
+    setActiveTabId(id); setAddress(""); setPageTitle("New tab"); setHasPage(false); setLoading(false);
+    setSelection(null); setAnnotating(false); discard();
+    void browserStopFind(threadId).catch(() => {});
+  }, [discard, threadId, updateTabs]);
+
+  const selectTab = useCallback((tab: BrowserTab) => {
+    if (tab.id === activeTabRef.current) return;
+    activeTabRef.current = tab.id;
+    setActiveTabId(tab.id); setAddress(tab.url || ""); setPageTitle(tab.title); setHasPage(Boolean(tab.url));
+    setLoading(false); setSelection(null); setAnnotating(false); discard();
+    if (tab.url) void navigateTo(tab.url, tab.id);
+    else void browserSetVisible(threadId, false).catch((reason) => setError(String(reason)));
+  }, [discard, navigateTo, threadId]);
+
+  const closeTab = useCallback((id: string) => {
+    const index = tabs.findIndex((tab) => tab.id === id);
+    const remaining = tabs.filter((tab) => tab.id !== id);
+    updateTabs(() => remaining);
+    if (id !== activeTabRef.current) return;
+    const next = remaining[index] || remaining[index - 1];
+    if (next) selectTab(next);
+    else {
+      activeTabRef.current = null;
+      setActiveTabId(null); setAddress(""); setPageTitle("Browser"); setHasPage(false); setLoading(false);
+      void browserSetVisible(threadId, false).catch((reason) => setError(String(reason)));
+    }
+  }, [selectTab, tabs, threadId, updateTabs]);
   const handledRequest = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !navigationRequest || handledRequest.current === navigationRequest.id) return;
@@ -301,6 +384,13 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
         <strong className="browser-title" title={pageTitle}>{pageTitle}</strong>
         <button type="button" className="ghost" onClick={onClose} aria-label="Close browser">Close</button>
       </PanelHeader>
+      <div className="browser-tabs" role="tablist" aria-label="Browser tabs">
+        {tabs.map((tab) => <div className={`browser-tab${tab.id === activeTabId ? " is-active" : ""}`} key={tab.id}>
+          <button type="button" role="tab" aria-selected={tab.id === activeTabId} title={tab.url || "New tab"} onClick={() => selectTab(tab)}>{tabLabel(tab)}</button>
+          <button type="button" className="ghost browser-tab-close" aria-label={`Close tab: ${tabLabel(tab)}`} onClick={() => closeTab(tab.id)}>×</button>
+        </div>)}
+        <button type="button" className="ghost browser-new-tab" aria-label="New tab" title="New tab" onClick={openNewTab}>+</button>
+      </div>
       <form className="browser-address-bar" onSubmit={(event) => { event.preventDefault(); void navigateTo(address); }}>
         <button type="button" className="ghost" disabled={!hasPage} aria-label="Back" onClick={() => void act("back")}>←</button>
         <button type="button" className="ghost" disabled={!hasPage} aria-label="Forward" onClick={() => void act("forward")}>→</button>
