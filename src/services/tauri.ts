@@ -58,6 +58,10 @@ export async function discoverProject(workspaceId: string, website: string, proj
   return invoke<ProjectDiscovery>("discover_project", { workspaceId, website, projectType });
 }
 
+export async function resolveProjectFavicon(website: string): Promise<string | null> {
+  return invoke<string | null>("resolve_project_favicon", { website });
+}
+
 export async function pickWorkspacePath(): Promise<string | null> {
   const selection = await open({ directory: true, multiple: false });
   if (!selection || Array.isArray(selection)) {

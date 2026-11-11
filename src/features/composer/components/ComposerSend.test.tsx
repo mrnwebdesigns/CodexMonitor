@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isMobilePlatform } from "../../../utils/platformPaths";
+import { subscribeErrorToasts } from "@services/toasts";
 import { Composer } from "./Composer";
 import type {
   AppOption,
@@ -35,7 +36,7 @@ type HarnessProps = {
     images: string[],
     appMentions?: AppMention[],
     submitIntent?: ComposerSendIntent,
-  ) => void;
+  ) => void | Promise<void>;
   apps?: AppOption[];
   isProcessing?: boolean;
   followUpMessageBehavior?: FollowUpMessageBehavior;
@@ -106,6 +107,31 @@ describe("Composer send triggers", () => {
 
     expect(onSend).toHaveBeenCalledTimes(1);
     expect(onSend).toHaveBeenCalledWith("hello world", [], undefined, "default");
+  });
+
+  it("reports a failed send and restores the prompt for retry", async () => {
+    const onSend = vi.fn()
+      .mockRejectedValueOnce(new Error("A required connector could not start"))
+      .mockResolvedValueOnce(undefined);
+    const onError = vi.fn();
+    const unsubscribe = subscribeErrorToasts(onError);
+    try {
+      render(<ComposerHarness onSend={onSend} />);
+      const textarea = screen.getByRole<HTMLTextAreaElement>("textbox");
+      fireEvent.change(textarea, { target: { value: "First prompt" } });
+      fireEvent.keyDown(textarea, { key: "Enter" });
+
+      await waitFor(() => expect(textarea.value).toBe("First prompt"));
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: "A required connector could not start" }),
+      );
+
+      fireEvent.keyDown(textarea, { key: "Enter" });
+      expect(onSend).toHaveBeenCalledTimes(2);
+      expect(onSend).toHaveBeenLastCalledWith("First prompt", [], undefined, "default");
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("sends once on send-button click", () => {

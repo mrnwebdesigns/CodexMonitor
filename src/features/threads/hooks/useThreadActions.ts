@@ -168,15 +168,17 @@ export function useThreadActions({
           payload: response,
         });
         const threadId = extractThreadId(response);
-        if (threadId) {
-          dispatch({ type: "ensureThread", workspaceId, threadId });
-          if (shouldActivate) {
-            dispatch({ type: "setActiveThreadId", workspaceId, threadId });
-          }
-          loadedThreadsRef.current[threadId] = true;
-          return threadId;
+        if (!threadId) {
+          throw new Error(
+            extractRpcErrorMessage(response) ?? "Codex did not return a new thread.",
+          );
         }
-        return null;
+        dispatch({ type: "ensureThread", workspaceId, threadId });
+        if (shouldActivate) {
+          dispatch({ type: "setActiveThreadId", workspaceId, threadId });
+        }
+        loadedThreadsRef.current[threadId] = true;
+        return threadId;
       } catch (error) {
         onDebug?.({
           id: `${Date.now()}-client-thread-start-error`,

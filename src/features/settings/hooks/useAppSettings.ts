@@ -158,7 +158,7 @@ function buildDefaultSettings(): AppSettings {
     toggleGitSidebarShortcut: isMac ? "cmd+shift+g" : "ctrl+shift+g",
     branchSwitcherShortcut: isMac ? "cmd+b" : "ctrl+b",
     toggleDebugPanelShortcut: isMac ? "cmd+shift+d" : "ctrl+shift+d",
-    toggleTerminalShortcut: isMac ? "cmd+shift+t" : "ctrl+shift+t",
+    toggleTerminalShortcut: isMac ? "cmd+j" : "ctrl+j",
     cycleAgentNextShortcut: isMac ? "cmd+ctrl+down" : "ctrl+alt+down",
     cycleAgentPrevShortcut: isMac ? "cmd+ctrl+up" : "ctrl+alt+up",
     cycleWorkspaceNextShortcut: isMac ? "cmd+shift+down" : "ctrl+alt+shift+down",

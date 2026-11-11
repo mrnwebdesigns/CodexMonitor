@@ -44,6 +44,7 @@ import { ComposerMetaBar } from "./ComposerMetaBar";
 import { ComposerQueue } from "./ComposerQueue";
 import { isMacPlatform } from "../../../utils/platformPaths";
 import type { CodexArgsOption } from "../../threads/utils/codexArgsProfiles";
+import { pushErrorToast } from "@services/toasts";
 
 type ComposerProps = {
   onSend: (
@@ -51,7 +52,7 @@ type ComposerProps = {
     images: string[],
     appMentions?: AppMention[],
     submitIntent?: ComposerSendIntent,
-  ) => void;
+  ) => void | Promise<void>;
   onStop: () => void;
   canStop: boolean;
   disabled?: boolean;
@@ -89,6 +90,7 @@ type ComposerProps = {
   draftText?: string;
   onDraftChange?: (text: string) => void;
   historyKey?: string | null;
+  draftScopeKey?: string | null;
   attachedImages?: string[];
   onPickImages?: () => void;
   onAttachImages?: (paths: string[]) => void;
@@ -198,6 +200,7 @@ export const Composer = memo(function Composer({
   draftText = "",
   onDraftChange,
   historyKey = null,
+  draftScopeKey = historyKey,
   attachedImages = [],
   onPickImages,
   onAttachImages,
@@ -281,14 +284,20 @@ export const Composer = memo(function Composer({
     continueListOnShiftEnter,
   } = editorSettings;
 
+  const draftRef = useRef({ scope: draftScopeKey, text });
+  draftRef.current = { scope: draftScopeKey, text };
+  const submissionRef = useRef(0);
+
   const setComposerText = useCallback(
     (next: string) => {
+      draftRef.current.text = next;
       setText(next);
       onDraftChange?.(next);
     },
     [onDraftChange],
   );
   const syncDraftText = useCallback((next: string) => {
+    draftRef.current.text = next;
     setText((prev) => (prev === next ? prev : next));
   }, []);
 
@@ -401,10 +410,34 @@ export const Composer = memo(function Composer({
       recordHistory(trimmed);
     }
     const resolvedMentions = resolveBoundAppMentions(trimmed, appMentionBindings);
-    if (resolvedMentions.length > 0) {
-      onSend(trimmed, attachedImages, resolvedMentions, submitIntent);
-    } else {
-      onSend(trimmed, attachedImages, undefined, submitIntent);
+    const submission = ++submissionRef.current;
+    const reportError = (error: unknown) => {
+      pushErrorToast({
+        title: "Couldn’t send prompt",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    };
+    try {
+      const sent = onSend(
+        trimmed,
+        attachedImages,
+        resolvedMentions.length > 0 ? resolvedMentions : undefined,
+        submitIntent,
+      );
+      void sent?.catch((error: unknown) => {
+        reportError(error);
+        if (
+          submissionRef.current === submission &&
+          draftRef.current.scope === draftScopeKey &&
+          draftRef.current.text === ""
+        ) {
+          setComposerText(text);
+          setAppMentionBindings(appMentionBindings);
+        }
+      });
+    } catch (error) {
+      reportError(error);
+      return;
     }
     resetHistoryNavigation();
     setComposerText("");
@@ -413,6 +446,7 @@ export const Composer = memo(function Composer({
     appMentionBindings,
     attachedImages,
     disabled,
+    draftScopeKey,
     onSend,
     recordHistory,
     resetHistoryNavigation,

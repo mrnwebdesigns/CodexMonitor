@@ -950,9 +950,9 @@ fn default_toggle_debug_panel_shortcut() -> Option<String> {
 
 fn default_toggle_terminal_shortcut() -> Option<String> {
     let value = if cfg!(target_os = "macos") {
-        "cmd+shift+t"
+        "cmd+j"
     } else {
-        "ctrl+shift+t"
+        "ctrl+j"
     };
     Some(value.to_string())
 }
@@ -1382,7 +1382,7 @@ mod tests {
         let expected_access = format!("{expected_primary}+shift+a");
         let expected_reasoning = format!("{expected_primary}+shift+r");
         let expected_toggle_debug = format!("{expected_primary}+shift+d");
-        let expected_toggle_terminal = format!("{expected_primary}+shift+t");
+        let expected_toggle_terminal = format!("{expected_primary}+j");
         assert_eq!(
             settings.composer_model_shortcut.as_deref(),
             Some(expected_model.as_str())

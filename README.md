@@ -233,7 +233,12 @@ Build the production Tauri bundle:
 npm run tauri:build
 ```
 
-Artifacts will be in `src-tauri/target/release/bundle/` (platform-specific subfolders).
+The standard artifacts are written to `src-tauri/target/release/bundle/`.
+
+On macOS, a checkout with an MRN Local configuration or Codex home builds the signed
+`Codex Monitor MRN Local.app` in `src-tauri/target/debug/bundle/macos/`. That
+bundle opens the existing MRN Local profile. Run `npm run tauri -- build` when
+you explicitly need the standard bundle from that checkout.
 
 ### Windows (opt-in)
 

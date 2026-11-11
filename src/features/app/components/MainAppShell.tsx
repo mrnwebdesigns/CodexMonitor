@@ -68,7 +68,7 @@ export function MainAppShell({
         </Suspense>
       ) : null}
       {usageGovernorNode}
-      <AppLayout {...appLayoutProps} browserPanelNode={browserPanelNode} topbarActionsNode={<>{appLayoutProps.topbarActionsNode}{browserToggleNode}</>} />
+      <AppLayout {...appLayoutProps} browserPanelNode={browserPanelNode} topbarActionsNode={<>{browserToggleNode}{appLayoutProps.topbarActionsNode}</>} />
       <AppModals {...appModalsProps} />
       {showMobileSetupWizard ? <MobileServerSetupWizard {...mobileSetupWizardProps} /> : null}
     </div>

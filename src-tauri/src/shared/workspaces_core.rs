@@ -1,5 +1,6 @@
 mod connect;
 mod crud_persistence;
+mod favicon;
 mod git_orchestration;
 mod helpers;
 mod io;
@@ -13,6 +14,7 @@ pub(crate) use crud_persistence::{
     update_workspace_settings_core,
 };
 pub(crate) use git_orchestration::{apply_worktree_changes_core, run_git_command_unit};
+pub(crate) use favicon::resolve_project_favicon_core;
 pub(crate) use helpers::{is_workspace_path_dir_core, list_workspaces_core};
 pub(crate) use io::{
     get_open_app_icon_core, list_workspace_files_core, open_workspace_in_core,

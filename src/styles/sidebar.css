@@ -1296,6 +1296,25 @@
   color: var(--text-strong);
 }
 
+.thread-row.just-finished {
+  border-color: rgba(63, 228, 126, 0.58);
+  background: color-mix(in srgb, var(--cm-surface-row) 86%, rgba(63, 228, 126, 0.2));
+  box-shadow:
+    inset 3px 0 0 #3fe47e,
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 18px rgba(63, 228, 126, 0.2);
+  animation: thread-row-finished-flash 1.2s ease-out 2;
+}
+
+.thread-row.just-finished.active {
+  background: color-mix(in srgb, var(--surface-active) 84%, rgba(63, 228, 126, 0.18));
+}
+
+@keyframes thread-row-finished-flash {
+  0%, 100% { filter: brightness(1); }
+  45% { filter: brightness(1.18); }
+}
+
 .thread-content {
   flex: 1;
   min-width: 0;
@@ -1324,6 +1343,20 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
+}
+
+.thread-finished-indicator {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid rgba(63, 228, 126, 0.42);
+  border-radius: 999px;
+  background: rgba(63, 228, 126, 0.14);
+  color: #8bf0ae;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .thread-details {

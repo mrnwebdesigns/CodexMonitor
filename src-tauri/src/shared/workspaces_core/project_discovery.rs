@@ -43,7 +43,7 @@ struct Manifest {
     runtime_status: String,
 }
 
-pub(super) fn website_url(text: &str) -> Option<reqwest::Url> {
+pub(crate) fn website_url(text: &str) -> Option<reqwest::Url> {
     let text = text.trim();
     let url = reqwest::Url::parse(if text.contains("://") {
         text

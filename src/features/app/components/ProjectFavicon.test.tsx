@@ -1,10 +1,17 @@
 // @vitest-environment jsdom
-import { fireEvent, render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectFavicon, projectFaviconUrl } from "./ProjectFavicon";
 
+const resolveProjectFavicon = vi.hoisted(() => vi.fn());
+vi.mock("@services/tauri", () => ({ resolveProjectFavicon }));
+
 describe("ProjectFavicon", () => {
+  beforeEach(() => {
+    resolveProjectFavicon.mockResolvedValue(null);
+  });
+
   it("uses the website root favicon without carrying a page path or query", () => {
     expect(projectFaviconUrl("https://example.com/work?view=preview")).toBe(
       "https://example.com/favicon.ico",
@@ -24,5 +31,13 @@ describe("ProjectFavicon", () => {
     expect(favicon?.getAttribute("src")).toBe("https://example.com/favicon.ico");
     fireEvent.error(favicon!);
     expect(view.container.querySelector(".project-favicon")).toBeNull();
+  });
+
+  it("uses a favicon declared by the website when available", async () => {
+    resolveProjectFavicon.mockResolvedValue("https://ctwilson.com/wp-content/uploads/favicon.png");
+    const view = render(<ProjectFavicon website="https://ctwilson.com" />);
+
+    await waitFor(() => expect(view.container.querySelector(".project-favicon")?.getAttribute("src"))
+      .toBe("https://ctwilson.com/wp-content/uploads/favicon.png"));
   });
 });

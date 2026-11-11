@@ -181,6 +181,32 @@ describe("ThreadList", () => {
     expect(row?.querySelector(".thread-status")?.getAttribute("aria-label")).toBe("Waiting for input");
   });
 
+  it("highlights the whole row when a running thread finishes", () => {
+    const { rerender } = render(
+      <ThreadList
+        {...baseProps}
+        threadStatusById={{
+          "thread-1": { isProcessing: true, hasUnread: false, isReviewing: false },
+          "thread-2": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    rerender(
+      <ThreadList
+        {...baseProps}
+        threadStatusById={{
+          "thread-1": { isProcessing: false, hasUnread: false, isReviewing: false },
+          "thread-2": { isProcessing: false, hasUnread: false, isReviewing: false },
+        }}
+      />,
+    );
+
+    const row = screen.getByText("Alpha").closest(".thread-row");
+    expect(row?.className).toContain("just-finished");
+    expect(screen.getByRole("status").textContent).toBe("Finished");
+  });
+
   it("toggles sub-agent descendants for parent rows", () => {
     const { getByText, queryByText, getByRole } = render(
       <ThreadList

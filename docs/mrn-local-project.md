@@ -31,7 +31,7 @@ Read `AGENTS.md` and `docs/codebase-map.md` before making changes. This file des
 - Isolated Codex home: `.mrn-local/codex-home` in this repository.
 - App settings: `~/Library/Application Support/com.mrnwebdesigns.codexmonitor.local/`.
 - Build/install scripts, local configuration, validation reports, and rollback bundles: `.mrn-local/` (locally ignored). See `.mrn-local/README.md` before rebuilding or changing the runtime.
-- Use the local launch/build configuration; it selects the isolated profile and disables build telemetry. Do not copy credentials or expose profile contents in tracked files.
+- Run `npm run tauri:build` to prepare the signed MRN Local bundle with the isolated profile. The build disables telemetry. Installing or launching it requires separate owner permission.
 - Automatic one-way history imports keep the isolated profile current with local Codex chats. Imports run on startup and every 30 seconds while Monitor runs; a closed Monitor catches up at its next launch. Read `docs/codex-history-import.md` for ownership and restart behavior.
 
 ## Implemented MRN features

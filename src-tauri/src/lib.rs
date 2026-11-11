@@ -301,6 +301,7 @@ pub fn run() {
             workspaces::list_workspace_files,
             workspaces::read_workspace_file,
             workspaces::discover_project,
+            workspaces::resolve_project_favicon,
             workspaces::open_workspace_in,
             workspaces::get_open_app_icon,
             git::list_git_branches,

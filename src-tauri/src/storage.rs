@@ -158,11 +158,13 @@ pub(crate) fn read_settings(path: &PathBuf) -> Result<AppSettings, String> {
     let data = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut value: Value = serde_json::from_str(&data).map_err(|e| e.to_string())?;
     migrate_follow_up_message_behavior(&mut value);
+    migrate_terminal_shortcut(&mut value);
     match serde_json::from_value(value.clone()) {
         Ok(settings) => Ok(finalize_loaded_settings(path, settings)),
         Err(_) => {
             sanitize_remote_settings_for_tcp_only(&mut value);
             migrate_follow_up_message_behavior(&mut value);
+            migrate_terminal_shortcut(&mut value);
             serde_json::from_value(value)
                 .map(|settings| finalize_loaded_settings(path, settings))
                 .map_err(|e| e.to_string())
@@ -228,6 +230,33 @@ fn migrate_follow_up_message_behavior(value: &mut Value) {
         "followUpMessageBehavior".to_string(),
         Value::String(if steer_enabled { "steer" } else { "queue" }.to_string()),
     );
+}
+
+/// Changes only the previous shipped default, preserving a user's custom shortcut.
+fn migrate_terminal_shortcut(value: &mut Value) {
+    let Value::Object(root) = value else {
+        return;
+    };
+    let old_default = if cfg!(target_os = "macos") {
+        "cmd+shift+t"
+    } else {
+        "ctrl+shift+t"
+    };
+    let new_default = if cfg!(target_os = "macos") {
+        "cmd+j"
+    } else {
+        "ctrl+j"
+    };
+    if root
+        .get("toggleTerminalShortcut")
+        .and_then(Value::as_str)
+        .is_some_and(|shortcut| shortcut == old_default)
+    {
+        root.insert(
+            "toggleTerminalShortcut".to_string(),
+            Value::String(new_default.to_string()),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -401,6 +430,47 @@ mod tests {
         let settings = read_settings(&path).expect("read settings");
         assert!(!settings.steer_enabled);
         assert_eq!(settings.follow_up_message_behavior, "queue");
+    }
+
+    #[test]
+    fn read_settings_migrates_the_previous_terminal_shortcut_default() {
+        let temp_dir = std::env::temp_dir().join(format!("codex-monitor-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let path = temp_dir.join("settings.json");
+        let old_default = if cfg!(target_os = "macos") {
+            "cmd+shift+t"
+        } else {
+            "ctrl+shift+t"
+        };
+        let expected = if cfg!(target_os = "macos") {
+            "cmd+j"
+        } else {
+            "ctrl+j"
+        };
+
+        std::fs::write(
+            &path,
+            format!(r#"{{"toggleTerminalShortcut":"{old_default}"}}"#),
+        )
+        .expect("write settings");
+
+        let settings = read_settings(&path).expect("read settings");
+        assert_eq!(settings.toggle_terminal_shortcut.as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn read_settings_preserves_a_custom_terminal_shortcut() {
+        let temp_dir = std::env::temp_dir().join(format!("codex-monitor-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let path = temp_dir.join("settings.json");
+
+        std::fs::write(&path, r#"{"toggleTerminalShortcut":"cmd+alt+t"}"#).expect("write settings");
+
+        let settings = read_settings(&path).expect("read settings");
+        assert_eq!(
+            settings.toggle_terminal_shortcut.as_deref(),
+            Some("cmd+alt+t")
+        );
     }
 
     #[test]

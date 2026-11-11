@@ -59,6 +59,11 @@ pub(crate) async fn discover_project(
 }
 
 #[tauri::command]
+pub(crate) async fn resolve_project_favicon(website: String) -> Option<String> {
+    workspaces_core::resolve_project_favicon_core(website).await
+}
+
+#[tauri::command]
 pub(crate) async fn read_workspace_file(
     workspace_id: String,
     path: String,

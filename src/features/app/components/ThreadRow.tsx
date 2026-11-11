@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 
 import type { ThreadSummary } from "../../../types";
 import {
@@ -108,6 +108,25 @@ export function ThreadRow({
   const threadStatus = threadStatusById[thread.id];
   const statusClass = getThreadStatusClass(threadStatus, hasPendingUserInput);
   const activityState = getThreadActivityState(threadStatus, hasPendingUserInput);
+  const previousActivityState = useRef(activityState);
+  const [recentlyFinished, setRecentlyFinished] = useState(false);
+
+  useEffect(() => {
+    const finished = previousActivityState.current === "running" && activityState === "idle";
+    previousActivityState.current = activityState;
+
+    if (!finished) {
+      if (activityState === "running") {
+        setRecentlyFinished(false);
+      }
+      return;
+    }
+
+    setRecentlyFinished(true);
+    const timeoutId = window.setTimeout(() => setRecentlyFinished(false), 6_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [activityState]);
+
   const activityLabel = activityState === "running"
     ? "Running"
     : activityState === "waiting"
@@ -158,7 +177,7 @@ export function ThreadRow({
         hasDetails ? " has-secondary-line" : ""
       }${canToggleSubagents ? " has-subagent-children" : ""}${
         depth > 0 ? " is-nested" : ""
-      }${isPinned ? " is-pinned" : ""}`}
+      }${isPinned ? " is-pinned" : ""}${recentlyFinished ? " just-finished" : ""}`}
       style={indentStyle}
       onClick={() => onSelectThread(workspaceId, thread.id)}
       onContextMenu={(event) => onShowThreadMenu(event, workspaceId, thread.id, canPin)}
@@ -180,6 +199,11 @@ export function ThreadRow({
       <div className="thread-content">
         <div className="thread-headline">
           <span className="thread-name">{thread.name}</span>
+          {recentlyFinished && (
+            <span className="thread-finished-indicator" role="status">
+              Finished
+            </span>
+          )}
         </div>
         {hasDetails && (
           <div className="thread-details">

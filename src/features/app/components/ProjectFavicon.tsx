@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { resolveProjectFavicon } from "@services/tauri";
 
 type ProjectFaviconProps = {
   website?: string | null;
@@ -26,12 +27,26 @@ export function projectFaviconUrl(website?: string | null): string | null {
 }
 
 export function ProjectFavicon({ website }: ProjectFaviconProps) {
-  const faviconUrl = projectFaviconUrl(website);
+  const fallbackUrl = projectFaviconUrl(website);
+  const [faviconUrl, setFaviconUrl] = useState(fallbackUrl);
   const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
+    let active = true;
+    setFaviconUrl(fallbackUrl);
     setUnavailable(false);
-  }, [faviconUrl]);
+    if (!fallbackUrl || !website) {
+      return () => { active = false; };
+    }
+
+    void resolveProjectFavicon(website).then((url) => {
+      if (active && url) {
+        setFaviconUrl(url);
+      }
+    }).catch(() => undefined);
+
+    return () => { active = false; };
+  }, [fallbackUrl, website]);
 
   if (!faviconUrl || unavailable) {
     return null;

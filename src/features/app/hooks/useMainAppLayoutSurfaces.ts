@@ -541,6 +541,7 @@ function buildPrimarySurface({
           files: composerWorkspaceState.files,
           textareaRef: composerInputRef,
           historyKey: activeWorkspace?.id ?? null,
+          draftScopeKey: activeThreadId ?? activeWorkspace?.id ?? null,
           editorSettings: composerEditorSettings,
           editorExpanded: composerEditorExpanded,
           onToggleEditorExpanded: onToggleComposerEditorExpanded,

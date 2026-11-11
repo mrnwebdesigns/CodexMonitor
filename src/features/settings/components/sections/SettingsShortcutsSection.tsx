@@ -179,7 +179,7 @@ export function SettingsShortcutsSection({
             label: "Toggle terminal panel",
             draftKey: "terminal",
             settingKey: "toggleTerminalShortcut",
-            help: `Default: ${formatShortcut("cmd+shift+t")}`,
+            help: `Default: ${formatShortcut("cmd+j")}`,
           },
         ],
       },

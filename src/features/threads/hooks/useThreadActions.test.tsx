@@ -140,6 +140,17 @@ describe("useThreadActions", () => {
     expect(loadedThreadsRef.current["thread-1"]).toBe(true);
   });
 
+  it("rejects a failed thread start without selecting an empty thread", async () => {
+    vi.mocked(startThread).mockResolvedValueOnce({
+      error: { message: "A required connector could not start" },
+    });
+    const { result, dispatch } = renderActions();
+
+    await expect(result.current.startThreadForWorkspace("ws-1"))
+      .rejects.toThrow("A required connector could not start");
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it("forks a thread and activates the fork", async () => {
     vi.mocked(forkThread).mockResolvedValue({
       result: { thread: { id: "thread-fork-1" } },
