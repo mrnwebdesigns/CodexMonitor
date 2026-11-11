@@ -1540,6 +1540,22 @@ export default function MainApp() {
   const showGitInitBanner =
     Boolean(activeWorkspace) && !hasGitRootOverride && isMissingRepo(gitStatus.error);
   const browser = useBrowserPanel(activeThreadId);
+  const browserAvailable = !isCompact && Boolean(activeWorkspace) && Boolean(activeThreadId) && !showHome;
+  const browserToggleNode = browserAvailable ? (
+    <button
+      type="button"
+      className={`main-header-action ds-tooltip-trigger${browser.open ? " is-active" : ""}`}
+      aria-label="Browser"
+      aria-pressed={browser.open}
+      title="Browser"
+      data-tooltip="Browser"
+      data-tooltip-placement="bottom"
+      data-tauri-drag-region="false"
+      onClick={() => browser.setOpen(!browser.open)}
+    >
+      <AppWindow size={14} aria-hidden />
+    </button>
+  ) : undefined;
   const displayNodes = useMainAppDisplayNodes({
     showCompactCodexThreadActions,
     handleMobileThreadRefresh,
@@ -1547,9 +1563,7 @@ export default function MainApp() {
     centerMode,
     gitDiffViewStyle,
     setGitDiffViewStyle,
-    isCompact,
-    rightPanelCollapsed,
-    sidebarToggleProps,
+    browserToggleNode,
     workspaceHomeProps: activeWorkspace
       ? {
           workspace: activeWorkspace,
@@ -1937,7 +1951,6 @@ export default function MainApp() {
     },
   });
 
-  const browserAvailable = !isCompact && Boolean(activeWorkspace) && Boolean(activeThreadId) && !showHome;
   const browserObscured = Boolean(appModalsProps.settingsOpen || appModalsProps.renamePrompt || appModalsProps.initGitRepoPrompt || appModalsProps.worktreePrompt || appModalsProps.clonePrompt || appModalsProps.workspaceFromUrlPrompt || appModalsProps.mobileRemoteWorkspacePathPrompt || appModalsProps.branchSwitcher);
   return <MainAppShell {...mainAppShellProps}
     usageGovernorNode={
@@ -1982,21 +1995,6 @@ export default function MainApp() {
         </div>
       ) : undefined
     }
-    browserToggleNode={browserAvailable ? (
-      <button
-        type="button"
-        className={`main-header-action browser-toggle ds-tooltip-trigger${browser.open ? " is-active" : ""}`}
-        aria-label="Browser"
-        aria-pressed={browser.open}
-        title="Browser"
-        data-tooltip="Browser"
-        data-tooltip-placement="bottom"
-        data-tauri-drag-region="false"
-        onClick={() => browser.setOpen(!browser.open)}
-      >
-        <AppWindow size={14} aria-hidden />
-      </button>
-    ) : undefined}
     browserPanelNode={browserAvailable && browser.open && activeWorkspace && activeThreadId ? <BrowserPanel
       workspaceId={activeWorkspace.id}
       threadId={activeThreadId}

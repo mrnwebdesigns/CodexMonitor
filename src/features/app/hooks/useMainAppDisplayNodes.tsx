@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import RefreshCw from "lucide-react/dist/esm/icons/refresh-cw";
 import { MainHeaderActions } from "@app/components/MainHeaderActions";
 import { WorkspaceHome } from "@/features/workspaces/components/WorkspaceHome";
@@ -10,9 +10,7 @@ type UseMainAppDisplayNodesArgs = {
   centerMode: "chat" | "diff";
   gitDiffViewStyle: "split" | "unified";
   setGitDiffViewStyle: (style: "split" | "unified") => void;
-  isCompact: boolean;
-  rightPanelCollapsed: boolean;
-  sidebarToggleProps: Parameters<typeof MainHeaderActions>[0]["sidebarToggleProps"];
+  browserToggleNode?: ReactNode;
   workspaceHomeProps: ComponentProps<typeof WorkspaceHome> | null;
 };
 
@@ -23,9 +21,7 @@ export function useMainAppDisplayNodes({
   centerMode,
   gitDiffViewStyle,
   setGitDiffViewStyle,
-  isCompact,
-  rightPanelCollapsed,
-  sidebarToggleProps,
+  browserToggleNode,
   workspaceHomeProps,
 }: UseMainAppDisplayNodesArgs) {
   const mainHeaderActionsNode = (
@@ -53,9 +49,7 @@ export function useMainAppDisplayNodes({
         centerMode={centerMode}
         gitDiffViewStyle={gitDiffViewStyle}
         onSelectDiffViewStyle={setGitDiffViewStyle}
-        isCompact={isCompact}
-        rightPanelCollapsed={rightPanelCollapsed}
-        sidebarToggleProps={sidebarToggleProps}
+        browserToggleNode={browserToggleNode}
       />
     </>
   );

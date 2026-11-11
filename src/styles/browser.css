@@ -1,5 +1,4 @@
 .content.content-browser { display: grid; grid-row: 2; overflow: hidden; }
-.browser-toggle { margin-inline-start: 8px; }
 .browser-chat { min-width: 0; min-height: 0; display: flex; }
 .browser-split-resizer {
   position: relative;
