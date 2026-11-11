@@ -24,6 +24,7 @@ import {
 import type { ThreadAction } from "./useThreadsReducer";
 
 type UseThreadTurnEventsOptions = {
+  activeThreadId?: string | null;
   dispatch: Dispatch<ThreadAction>;
   onThreadCompleted?: (workspaceId: string, threadId: string) => void;
   planByThreadRef: MutableRefObject<Record<string, TurnPlan | null>>;
@@ -42,6 +43,7 @@ type UseThreadTurnEventsOptions = {
 };
 
 export function useThreadTurnEvents({
+  activeThreadId = null,
   dispatch,
   onThreadCompleted,
   planByThreadRef,
@@ -244,6 +246,9 @@ export function useThreadTurnEvents({
         }
         return;
       }
+      if (threadId !== activeThreadId) {
+        dispatch({ type: "markUnread", threadId, hasUnread: true });
+      }
       markProcessing(threadId, true);
       if (turnId) {
         lastReducerActiveTurnIdByThreadRef.current[threadId] =
@@ -254,6 +259,7 @@ export function useThreadTurnEvents({
       }
     },
     [
+      activeThreadId,
       dispatch,
       getActiveTurnId,
       markProcessing,

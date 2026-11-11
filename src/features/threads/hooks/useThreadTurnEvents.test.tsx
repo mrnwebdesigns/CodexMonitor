@@ -23,6 +23,7 @@ vi.mock("@threads/utils/threadNormalize", () => ({
 }));
 
 type SetupOverrides = {
+  activeThreadId?: string | null;
   pendingInterrupts?: string[];
   planByThread?: Record<string, TurnPlan | null>;
   activeTurnByThread?: Record<string, string | null>;
@@ -56,6 +57,7 @@ const makeOptions = (overrides: SetupOverrides = {}) => {
 
   const { result } = renderHook(() =>
     useThreadTurnEvents({
+      activeThreadId: overrides.activeThreadId,
       dispatch,
       onThreadCompleted,
       planByThreadRef,
@@ -134,6 +136,28 @@ describe("useThreadTurnEvents", () => {
       1_700_000_000_000,
     );
     expect(safeMessageActivity).toHaveBeenCalled();
+  });
+
+  it("marks a background turn as unread without changing the selected thread", () => {
+    const { result, dispatch, markProcessing } = makeOptions({
+      activeThreadId: "thread-in-view",
+    });
+
+    act(() => {
+      result.current.onTurnStarted("ws-1", "thread-background", "turn-1");
+    });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "ensureThread",
+      workspaceId: "ws-1",
+      threadId: "thread-background",
+    });
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "markUnread",
+      threadId: "thread-background",
+      hasUnread: true,
+    });
+    expect(markProcessing).toHaveBeenCalledWith("thread-background", true);
   });
 
   it("does not override custom thread names on thread started", () => {

@@ -76,11 +76,6 @@ export function reduceThreadLifecycle(
             lastDurationMs: null,
           },
         },
-        activeThreadIdByWorkspace: {
-          ...state.activeThreadIdByWorkspace,
-          [action.workspaceId]:
-            state.activeThreadIdByWorkspace[action.workspaceId] ?? action.threadId,
-        },
       };
     }
     case "hideThread": {

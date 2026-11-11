@@ -4,7 +4,7 @@ import { initialState, threadReducer } from "./useThreadsReducer";
 import type { ThreadState } from "./useThreadsReducer";
 
 describe("threadReducer", () => {
-  it("ensures thread with default name and active selection", () => {
+  it("ensures a background thread without changing selection", () => {
     const next = threadReducer(initialState, {
       type: "ensureThread",
       workspaceId: "ws-1",
@@ -13,7 +13,7 @@ describe("threadReducer", () => {
     const threads = next.threadsByWorkspace["ws-1"] ?? [];
     expect(threads).toHaveLength(1);
     expect(threads[0].name).toBe("New Agent");
-    expect(next.activeThreadIdByWorkspace["ws-1"]).toBe("thread-1");
+    expect(next.activeThreadIdByWorkspace["ws-1"]).toBeUndefined();
     expect(next.threadStatusById["thread-1"]?.isProcessing).toBe(false);
   });
 

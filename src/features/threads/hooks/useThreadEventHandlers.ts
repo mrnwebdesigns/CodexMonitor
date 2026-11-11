@@ -171,6 +171,7 @@ export function useThreadEventHandlers({
     onAccountRateLimitsUpdated,
     onTurnError,
   } = useThreadTurnEvents({
+    activeThreadId,
     dispatch,
     onThreadCompleted,
     planByThreadRef,

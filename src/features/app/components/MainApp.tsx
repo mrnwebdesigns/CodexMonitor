@@ -1689,6 +1689,8 @@ export default function MainApp() {
     activeAccount,
     homeRateLimits,
     homeAccount,
+    usageGovernorSnapshot,
+    usageGovernorQueue,
     onUseReset: handleUseReset,
     accountSwitching,
     onSwitchAccount: handleSwitchAccount,

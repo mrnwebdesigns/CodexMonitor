@@ -360,6 +360,7 @@ describe("Sidebar", () => {
     const view = render(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isProcessing: true } }} />);
     const active = screen.getByRole("region", { name: "Active Threads" });
     expect(active.textContent).not.toContain("Finished · unread");
+    expect(within(active).getByRole("status", { name: "New activity" })).toBeTruthy();
     view.rerender(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isProcessing: false } }} />);
     expect(within(active).getByText("Finished · unread")).toBeTruthy();
     expect(active.querySelector(".active-thread-dot.is-unread")).toBeTruthy();
@@ -370,6 +371,7 @@ describe("Sidebar", () => {
     view.rerender(<Sidebar {...props} activeWorkspaceId="client" activeThreadId="task" threadStatusById={{ task: { hasUnread: false } }} />);
     expect(active.textContent).not.toContain("Finished · unread");
     expect(active.querySelector(".active-thread-dot.is-unread")).toBeNull();
+    expect(within(active).queryByRole("status", { name: "New activity" })).toBeNull();
     view.rerender(<Sidebar {...props} threadStatusById={{ task: { hasUnread: true, isReviewing: true } }} />);
     expect(active.textContent).toContain("Reviewing");
     expect(active.textContent).not.toContain("Finished · unread");
@@ -422,6 +424,76 @@ describe("Sidebar", () => {
     expect(Array.from(view.container.querySelectorAll(".active-thread-name")).map((node) => node.textContent))
       .toEqual(["Alpha A", "Alpha B", "Beta A"]);
     expect(view.container.querySelector(".active-threads-order")).toBeNull();
+  });
+
+  it("can group Active Threads into running and finished or waiting sections", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: true } };
+    const now = Date.now();
+    const view = render(
+      <Sidebar
+        {...baseProps}
+        workspaces={[project]}
+        groupedWorkspaces={[{ id: "clients", name: "Clients", workspaces: [project] }]}
+        threadsByWorkspace={{ client: [
+          { id: "running", name: "Running task", updatedAt: now },
+          { id: "waiting", name: "Waiting task", updatedAt: now - 1 },
+          { id: "finished", name: "Finished task", updatedAt: now - 2 },
+        ] }}
+        threadStatusById={{ running: { isProcessing: true } }}
+        userInputRequests={[{
+          workspace_id: "client",
+          request_id: 1,
+          params: { thread_id: "waiting", turn_id: "turn-1", item_id: "item-1", questions: [] },
+        }]}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Group active threads by" }), { target: { value: "status" } });
+
+    expect(screen.getByRole("separator", { name: "Status: Running" })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: "Status: Finished / waiting" })).toBeTruthy();
+    expect(view.container.querySelectorAll(".active-thread-dot.is-waiting")).toHaveLength(1);
+    expect(Array.from(view.container.querySelectorAll(".active-thread-name")).map((node) => node.textContent))
+      .toEqual(["Running task", "Waiting task", "Finished task"]);
+    expect(localStorage.getItem("codexmonitor.activeThreadsGrouping")).toBe("status");
+  });
+
+  it("restores parent thread grouping alongside the governor queue status", () => {
+    const project: WorkspaceInfo = { id: "client", name: "Client Alpha", path: "/tmp/client", connected: true, settings: { sidebarCollapsed: false } };
+    const now = Date.now();
+    localStorage.setItem("codexmonitor.activeThreadOrder.v1", "parent");
+    const props = {
+      ...baseProps,
+      workspaces: [project],
+      groupedWorkspaces: [{ id: "clients", name: "Clients", workspaces: [project] }],
+      threadsByWorkspace: { client: [
+        { id: "child", name: "Child task", updatedAt: now },
+        { id: "parent", name: "Parent task", updatedAt: now - 1 },
+      ] },
+      threadParentById: { child: "parent" },
+      usageGovernorSnapshot: {
+        state: "throttled" as const,
+        usedPercent: 82,
+        resetsAt: null,
+        projectedExhaustionAt: null,
+        activeTurns: 1,
+        effectiveConcurrency: 1,
+        queuedTurns: 1,
+      },
+      usageGovernorQueue: [{ id: "queued-1", workspaceId: "client", threadId: "child", createdAt: now, position: 1 }],
+    };
+    const view = render(<Sidebar {...props} />);
+    const active = screen.getByRole("region", { name: "Active Threads" });
+    expect(within(active).getByRole("separator", { name: "Parent thread: Parent task" })).toBeTruthy();
+    expect(Array.from(active.querySelectorAll(".active-thread-name"), (node) => node.textContent)).toEqual(["Parent task", "Child task"]);
+    expect(within(active).getByText("Governor throttled · 1/1 · 1 queued")).toBeTruthy();
+    expect(within(active).getByText("Governor queued · #1")).toBeTruthy();
+    expect(active.querySelector(".active-thread-dot.is-queued")).toBeTruthy();
+
+    fireEvent.change(within(active).getByRole("combobox", { name: "Group active threads by" }), { target: { value: "project" } });
+    view.unmount();
+    render(<Sidebar {...props} />);
+    expect(screen.getByRole("separator", { name: "Project: Client Alpha" })).toBeTruthy();
   });
 
   it("sorts projects within a group and remembers the selected order after remounting", () => {

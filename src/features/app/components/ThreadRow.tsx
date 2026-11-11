@@ -196,6 +196,14 @@ export function ThreadRow({
         role="img"
         title={activityLabel}
       />
+      {threadStatus?.hasUnread && !hasPendingUserInput && (
+        <span
+          className="thread-unread-indicator"
+          role="status"
+          aria-label="New activity"
+          title="New activity"
+        />
+      )}
       <div className="thread-content">
         <div className="thread-headline">
           <span className="thread-name">{thread.name}</span>

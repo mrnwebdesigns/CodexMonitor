@@ -19,7 +19,7 @@ describe("ProjectFavicon", () => {
   });
 
   it("only permits credential-free HTTP(S) websites", () => {
-    expect(projectFaviconUrl("example.com")).toBeNull();
+    expect(projectFaviconUrl("example.com")).toBe("https://example.com/favicon.ico");
     expect(projectFaviconUrl("file:///private/favicon.ico")).toBeNull();
     expect(projectFaviconUrl("https://user:secret@example.com")).toBeNull();
   });
@@ -36,6 +36,17 @@ describe("ProjectFavicon", () => {
   it("uses a favicon declared by the website when available", async () => {
     resolveProjectFavicon.mockResolvedValue("https://ctwilson.com/wp-content/uploads/favicon.png");
     const view = render(<ProjectFavicon website="https://ctwilson.com" />);
+
+    await waitFor(() => expect(view.container.querySelector(".project-favicon")?.getAttribute("src"))
+      .toBe("https://ctwilson.com/wp-content/uploads/favicon.png"));
+  });
+
+  it("shows the declared icon even if the default icon fails first", async () => {
+    resolveProjectFavicon.mockResolvedValue("https://ctwilson.com/wp-content/uploads/favicon.png");
+    const view = render(<ProjectFavicon website="ctwilson.com" />);
+    const rootIcon = view.container.querySelector(".project-favicon");
+    expect(rootIcon?.getAttribute("src")).toBe("https://ctwilson.com/favicon.ico");
+    fireEvent.error(rootIcon!);
 
     await waitFor(() => expect(view.container.querySelector(".project-favicon")?.getAttribute("src"))
       .toBe("https://ctwilson.com/wp-content/uploads/favicon.png"));

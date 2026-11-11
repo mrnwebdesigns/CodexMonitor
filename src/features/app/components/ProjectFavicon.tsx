@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { resolveProjectFavicon } from "@services/tauri";
+import { normalizeBrowserUrl } from "@/features/browser/utils/browserAnnotations";
 
 type ProjectFaviconProps = {
   website?: string | null;
@@ -11,16 +12,7 @@ export function projectFaviconUrl(website?: string | null): string | null {
   }
 
   try {
-    const url = new URL(website.trim());
-    if (
-      (url.protocol !== "http:" && url.protocol !== "https:") ||
-      url.username ||
-      url.password
-    ) {
-      return null;
-    }
-
-    return new URL("/favicon.ico", url).toString();
+    return new URL("/favicon.ico", normalizeBrowserUrl(website)).toString();
   } catch {
     return null;
   }
@@ -28,37 +20,34 @@ export function projectFaviconUrl(website?: string | null): string | null {
 
 export function ProjectFavicon({ website }: ProjectFaviconProps) {
   const fallbackUrl = projectFaviconUrl(website);
-  const [faviconUrl, setFaviconUrl] = useState(fallbackUrl);
-  const [unavailable, setUnavailable] = useState(false);
+  const [resolvedIcon, setResolvedIcon] = useState<{ website: string; url: string } | null>(null);
+  const [failedUrls, setFailedUrls] = useState<string[]>([]);
 
   useEffect(() => {
-    let active = true;
-    setFaviconUrl(fallbackUrl);
-    setUnavailable(false);
-    if (!fallbackUrl || !website) {
-      return () => { active = false; };
-    }
+    setResolvedIcon(null);
+    setFailedUrls([]);
+    if (!fallbackUrl || !website) return;
 
+    let active = true;
     void resolveProjectFavicon(website).then((url) => {
-      if (active && url) {
-        setFaviconUrl(url);
-      }
+      if (active && url) setResolvedIcon({ website, url });
     }).catch(() => undefined);
 
     return () => { active = false; };
   }, [fallbackUrl, website]);
 
-  if (!faviconUrl || unavailable) {
-    return null;
-  }
+  const resolvedUrl = resolvedIcon?.website === website ? resolvedIcon?.url : null;
+  const faviconUrl = [resolvedUrl, fallbackUrl].find((url) => url && !failedUrls.includes(url));
+  if (!faviconUrl) return null;
 
   return (
     <img
+      key={faviconUrl}
       className="project-favicon"
       src={faviconUrl}
       alt=""
       aria-hidden="true"
-      onError={() => setUnavailable(true)}
+      onError={() => setFailedUrls((previous) => [...previous, faviconUrl])}
     />
   );
 }
