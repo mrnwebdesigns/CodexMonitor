@@ -23,8 +23,8 @@ pub(crate) struct TerminalSessionInfo {
     id: String,
 }
 
-fn terminal_key(workspace_id: &str, terminal_id: &str) -> String {
-    format!("{workspace_id}:{terminal_id}")
+fn terminal_key(workspace_id: &str, thread_id: &str, terminal_id: &str) -> String {
+    format!("{workspace_id}\u{1f}{thread_id}\u{1f}{terminal_id}")
 }
 
 fn is_terminal_closed_error(message: &str) -> bool {
@@ -105,6 +105,7 @@ fn spawn_terminal_reader(
     app: AppHandle,
     session: Arc<TerminalSession>,
     workspace_id: String,
+    thread_id: String,
     terminal_id: String,
     mut reader: Box<dyn Read + Send>,
 ) {
@@ -122,6 +123,7 @@ fn spawn_terminal_reader(
                                 if !decoded.is_empty() {
                                     let payload = TerminalOutput {
                                         workspace_id: workspace_id.clone(),
+                                        thread_id: thread_id.clone(),
                                         terminal_id: terminal_id.clone(),
                                         data: decoded.to_string(),
                                     };
@@ -145,6 +147,7 @@ fn spawn_terminal_reader(
                                 if !chunk.is_empty() {
                                     let payload = TerminalOutput {
                                         workspace_id: workspace_id.clone(),
+                                        thread_id: thread_id.clone(),
                                         terminal_id: terminal_id.clone(),
                                         data: chunk,
                                     };
@@ -164,16 +167,18 @@ fn spawn_terminal_reader(
             }
         }
         let cleanup_workspace_id = workspace_id.clone();
+        let cleanup_thread_id = thread_id.clone();
         let cleanup_terminal_id = terminal_id.clone();
         let cleanup_session = Arc::clone(&session);
         event_sink.emit_terminal_exit(TerminalExit {
             workspace_id,
+            thread_id,
             terminal_id,
         });
         tauri::async_runtime::spawn(async move {
             let state = app.state::<AppState>();
             let mut sessions = state.terminal_sessions.lock().await;
-            let key = terminal_key(&cleanup_workspace_id, &cleanup_terminal_id);
+            let key = terminal_key(&cleanup_workspace_id, &cleanup_thread_id, &cleanup_terminal_id);
             let should_remove = sessions
                 .get(&key)
                 .is_some_and(|current| Arc::ptr_eq(current, &cleanup_session));
@@ -198,16 +203,20 @@ async fn get_workspace_path(
 #[tauri::command]
 pub(crate) async fn terminal_open(
     workspace_id: String,
+    thread_id: String,
     terminal_id: String,
     cols: u16,
     rows: u16,
     state: State<'_, AppState>,
     app: AppHandle,
 ) -> Result<TerminalSessionInfo, String> {
+    if thread_id.trim().is_empty() {
+        return Err("Thread id is required".to_string());
+    }
     if terminal_id.is_empty() {
         return Err("Terminal id is required".to_string());
     }
-    let key = terminal_key(&workspace_id, &terminal_id);
+    let key = terminal_key(&workspace_id, &thread_id, &terminal_id);
     {
         let sessions = state.terminal_sessions.lock().await;
         if let Some(existing) = sessions.get(&key) {
@@ -279,6 +288,7 @@ pub(crate) async fn terminal_open(
         app,
         Arc::clone(&session),
         workspace_id,
+        thread_id,
         terminal_id,
         reader,
     );
@@ -289,11 +299,12 @@ pub(crate) async fn terminal_open(
 #[tauri::command]
 pub(crate) async fn terminal_write(
     workspace_id: String,
+    thread_id: String,
     terminal_id: String,
     data: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let key = terminal_key(&workspace_id, &terminal_id);
+    let key = terminal_key(&workspace_id, &thread_id, &terminal_id);
     let session = get_terminal_session(&state, &key).await?;
     let write_result = tokio::task::spawn_blocking(move || {
         let mut writer = session.writer.blocking_lock();
@@ -321,12 +332,13 @@ pub(crate) async fn terminal_write(
 #[tauri::command]
 pub(crate) async fn terminal_resize(
     workspace_id: String,
+    thread_id: String,
     terminal_id: String,
     cols: u16,
     rows: u16,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let key = terminal_key(&workspace_id, &terminal_id);
+    let key = terminal_key(&workspace_id, &thread_id, &terminal_id);
     let session = get_terminal_session(&state, &key).await?;
     let size = PtySize {
         rows: rows.max(2),
@@ -355,10 +367,11 @@ pub(crate) async fn terminal_resize(
 #[tauri::command]
 pub(crate) async fn terminal_close(
     workspace_id: String,
+    thread_id: String,
     terminal_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let key = terminal_key(&workspace_id, &terminal_id);
+    let key = terminal_key(&workspace_id, &thread_id, &terminal_id);
     let mut sessions = state.terminal_sessions.lock().await;
     let session = sessions
         .remove(&key)

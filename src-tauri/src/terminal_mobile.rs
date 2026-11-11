@@ -17,6 +17,7 @@ pub(crate) struct TerminalSessionInfo {
 #[tauri::command]
 pub(crate) async fn terminal_open(
     _workspace_id: String,
+    _thread_id: String,
     terminal_id: String,
     _cols: u16,
     _rows: u16,
@@ -32,6 +33,7 @@ pub(crate) async fn terminal_open(
 #[tauri::command]
 pub(crate) async fn terminal_write(
     _workspace_id: String,
+    _thread_id: String,
     _terminal_id: String,
     _data: String,
     _state: State<'_, AppState>,
@@ -42,6 +44,7 @@ pub(crate) async fn terminal_write(
 #[tauri::command]
 pub(crate) async fn terminal_resize(
     _workspace_id: String,
+    _thread_id: String,
     _terminal_id: String,
     _cols: u16,
     _rows: u16,
@@ -53,6 +56,7 @@ pub(crate) async fn terminal_resize(
 #[tauri::command]
 pub(crate) async fn terminal_close(
     _workspace_id: String,
+    _thread_id: String,
     _terminal_id: String,
     _state: State<'_, AppState>,
 ) -> Result<(), String> {

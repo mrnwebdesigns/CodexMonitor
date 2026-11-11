@@ -4,6 +4,26 @@ import { describe, expect, it } from "vitest";
 import { useTerminalTabs } from "./useTerminalTabs";
 
 describe("useTerminalTabs.ensureTerminalWithTitle", () => {
+  it("keeps tabs and the selected terminal isolated by thread", () => {
+    const { result, rerender } = renderHook(
+      ({ threadId }) => useTerminalTabs({ activeWorkspaceId: "workspace-1", activeThreadId: threadId }),
+      { initialProps: { threadId: "thread-1" } },
+    );
+
+    act(() => {
+      result.current.ensureTerminalWithTitle("workspace-1", "thread-1", "one", "Thread one");
+      result.current.ensureTerminalWithTitle("workspace-1", "thread-2", "two", "Thread two");
+    });
+
+    expect(result.current.terminals).toEqual([{ id: "one", title: "Thread one" }]);
+    expect(result.current.activeTerminalId).toBe("one");
+
+    rerender({ threadId: "thread-2" });
+
+    expect(result.current.terminals).toEqual([{ id: "two", title: "Thread two" }]);
+    expect(result.current.activeTerminalId).toBe("two");
+  });
+
   it("creates and activates a named terminal tab", () => {
     const { result } = renderHook(() =>
       useTerminalTabs({ activeWorkspaceId: "workspace-1" }),

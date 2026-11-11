@@ -10,12 +10,14 @@ export type Unsubscribe = () => void;
 
 export type TerminalOutputEvent = {
   workspaceId: string;
+  threadId: string;
   terminalId: string;
   data: string;
 };
 
 export type TerminalExitEvent = {
   workspaceId: string;
+  threadId: string;
   terminalId: string;
 };
 

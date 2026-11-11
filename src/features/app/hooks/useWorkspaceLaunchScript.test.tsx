@@ -92,18 +92,19 @@ describe("useWorkspaceLaunchScript", () => {
     });
 
     expect(openTerminal).toHaveBeenCalled();
-    expect(ensureLaunchTerminal).toHaveBeenCalledWith("workspace-1");
-    expect(restartLaunchSession).toHaveBeenCalledWith("workspace-1", "launch");
+    expect(ensureLaunchTerminal).toHaveBeenCalledWith("workspace-1", "legacy-thread");
+    expect(restartLaunchSession).toHaveBeenCalledWith("workspace-1", "legacy-thread", "launch");
 
     rerender({
       activeWorkspace: workspaceWithScript,
-      terminalState: { ...terminalState, hasSession: true, readyKey: "workspace-1:launch" },
+      terminalState: { ...terminalState, hasSession: true, readyKey: "workspace-1:legacy-thread:launch" },
       activeTerminalId: "launch",
     });
 
     await waitFor(() => {
       expect(writeTerminalSession).toHaveBeenCalledWith(
         "workspace-1",
+        "legacy-thread",
         "launch",
         "npm run dev\n",
       );

@@ -113,20 +113,22 @@ describe("useWorkspaceLaunchScripts", () => {
     expect(openTerminal).toHaveBeenCalled();
     expect(ensureLaunchTerminal).toHaveBeenCalledWith(
       "workspace-1",
+      "legacy-thread",
       scripts[0],
       "Launch: Play",
     );
-    expect(restartLaunchSession).toHaveBeenCalledWith("workspace-1", "launch-one");
+    expect(restartLaunchSession).toHaveBeenCalledWith("workspace-1", "legacy-thread", "launch-one");
 
     rerender({
       activeWorkspace: workspace,
-      terminalState: { ...terminalState, hasSession: true, readyKey: "workspace-1:launch-one" },
+      terminalState: { ...terminalState, hasSession: true, readyKey: "workspace-1:legacy-thread:launch-one" },
       activeTerminalId: "launch-one",
     });
 
     await waitFor(() => {
       expect(writeTerminalSession).toHaveBeenCalledWith(
         "workspace-1",
+        "legacy-thread",
         "launch-one",
         "npm run dev\n",
       );

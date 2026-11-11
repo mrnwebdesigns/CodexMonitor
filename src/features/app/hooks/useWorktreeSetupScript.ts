@@ -10,12 +10,13 @@ import {
 
 const WORKTREE_SETUP_TERMINAL_ID = "worktree-setup";
 const WORKTREE_SETUP_TERMINAL_TITLE = "Setup";
+const WORKTREE_SETUP_THREAD_ID = "__worktree_setup__";
 const DEFAULT_TERMINAL_COLS = 120;
 const DEFAULT_TERMINAL_ROWS = 32;
 
 type UseWorktreeSetupScriptOptions = {
-  ensureTerminalWithTitle: (workspaceId: string, terminalId: string, title: string) => string;
-  restartTerminalSession: (workspaceId: string, terminalId: string) => Promise<void>;
+  ensureTerminalWithTitle: (workspaceId: string, threadId: string, terminalId: string, title: string) => string;
+  restartTerminalSession: (workspaceId: string, threadId: string, terminalId: string) => Promise<void>;
   openTerminal: () => void;
   onDebug?: (entry: DebugEntry) => void;
 };
@@ -51,23 +52,25 @@ export function useWorktreeSetupScript({
         openTerminal();
         const terminalId = ensureTerminalWithTitle(
           worktree.id,
+          WORKTREE_SETUP_THREAD_ID,
           WORKTREE_SETUP_TERMINAL_ID,
           WORKTREE_SETUP_TERMINAL_TITLE,
         );
 
         try {
-          await restartTerminalSession(worktree.id, terminalId);
+          await restartTerminalSession(worktree.id, WORKTREE_SETUP_THREAD_ID, terminalId);
         } catch (error) {
           onDebug?.(buildErrorDebugEntry("worktree setup restart error", error));
         }
 
         await openTerminalSession(
           worktree.id,
+          WORKTREE_SETUP_THREAD_ID,
           terminalId,
           DEFAULT_TERMINAL_COLS,
           DEFAULT_TERMINAL_ROWS,
         );
-        await writeTerminalSession(worktree.id, terminalId, `${script}\n`);
+        await writeTerminalSession(worktree.id, WORKTREE_SETUP_THREAD_ID, terminalId, `${script}\n`);
         await markWorktreeSetupRan(worktree.id);
       } catch (error) {
         onDebug?.(buildErrorDebugEntry("worktree setup script error", error));

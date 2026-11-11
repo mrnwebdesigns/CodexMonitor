@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 type UsePanelVisibilityOptions = {
   isCompact: boolean;
   activeWorkspaceId: string | null;
+  activeThreadId: string | null;
   setActiveTab: (tab: "home" | "codex" | "git" | "log" | "projects") => void;
   setDebugOpen: (value: boolean | ((prev: boolean) => boolean)) => void;
 };
@@ -10,10 +11,15 @@ type UsePanelVisibilityOptions = {
 export function usePanelVisibility({
   isCompact,
   activeWorkspaceId,
+  activeThreadId,
   setActiveTab,
   setDebugOpen,
 }: UsePanelVisibilityOptions) {
-  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalOpenByThread, setTerminalOpenByThread] = useState<Record<string, boolean>>({});
+  const terminalScope = activeWorkspaceId && activeThreadId
+    ? `${activeWorkspaceId}:${activeThreadId}`
+    : null;
+  const terminalOpen = terminalScope ? terminalOpenByThread[terminalScope] ?? false : false;
 
   const onToggleDebug = useCallback(() => {
     if (isCompact) {
@@ -24,22 +30,28 @@ export function usePanelVisibility({
   }, [isCompact, setActiveTab, setDebugOpen]);
 
   const onToggleTerminal = useCallback(() => {
-    if (!activeWorkspaceId) {
+    if (!terminalScope) {
       return;
     }
-    setTerminalOpen((prev) => !prev);
-  }, [activeWorkspaceId]);
+    setTerminalOpenByThread((current) => ({
+      ...current,
+      [terminalScope]: !(current[terminalScope] ?? false),
+    }));
+  }, [terminalScope]);
 
   const openTerminal = useCallback(() => {
-    if (!activeWorkspaceId) {
+    if (!terminalScope) {
       return;
     }
-    setTerminalOpen(true);
-  }, [activeWorkspaceId]);
+    setTerminalOpenByThread((current) => ({ ...current, [terminalScope]: true }));
+  }, [terminalScope]);
 
   const closeTerminal = useCallback(() => {
-    setTerminalOpen(false);
-  }, []);
+    if (!terminalScope) {
+      return;
+    }
+    setTerminalOpenByThread((current) => ({ ...current, [terminalScope]: false }));
+  }, [terminalScope]);
 
   return {
     terminalOpen,

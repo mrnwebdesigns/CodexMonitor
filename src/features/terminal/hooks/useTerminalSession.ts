@@ -21,11 +21,12 @@ const MAX_BUFFER_CHARS = 200_000;
 
 type UseTerminalSessionOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  activeThreadId: string | null;
   activeTerminalId: string | null;
   isVisible: boolean;
   focusRequestVersion: number;
   onDebug?: (entry: DebugEntry) => void;
-  onSessionExit?: (workspaceId: string, terminalId: string) => void;
+  onSessionExit?: (workspaceId: string, threadId: string, terminalId: string) => void;
 };
 
 type TerminalAppearance = {
@@ -44,7 +45,7 @@ export type TerminalSessionState = {
   containerRef: RefObject<HTMLDivElement | null>;
   hasSession: boolean;
   readyKey: string | null;
-  cleanupTerminalSession: (workspaceId: string, terminalId: string) => void;
+  cleanupTerminalSession: (workspaceId: string, threadId: string, terminalId: string) => void;
 };
 
 function appendBuffer(existing: string | undefined, data: string): string {
@@ -113,6 +114,7 @@ function getTerminalAppearance(container: HTMLElement | null): TerminalAppearanc
 
 export function useTerminalSession({
   activeWorkspace,
+  activeThreadId,
   activeTerminalId,
   isVisible,
   focusRequestVersion,
@@ -128,6 +130,7 @@ export function useTerminalSession({
   const activeKeyRef = useRef<string | null>(null);
   const renderedKeyRef = useRef<string | null>(null);
   const activeWorkspaceRef = useRef<WorkspaceInfo | null>(null);
+  const activeThreadIdRef = useRef<string | null>(null);
   const activeTerminalIdRef = useRef<string | null>(null);
   const pendingFocusRef = useRef(false);
   const [status, setStatus] = useState<TerminalStatus>("idle");
@@ -135,8 +138,8 @@ export function useTerminalSession({
   const [hasSession, setHasSession] = useState(false);
   const [readyKey, setReadyKey] = useState<string | null>(null);
   const [sessionResetCounter, setSessionResetCounter] = useState(0);
-  const cleanupTerminalSession = useCallback((workspaceId: string, terminalId: string) => {
-    const key = `${workspaceId}:${terminalId}`;
+  const cleanupTerminalSession = useCallback((workspaceId: string, threadId: string, terminalId: string) => {
+    const key = `${workspaceId}:${threadId}:${terminalId}`;
     outputBuffersRef.current.delete(key);
     openedSessionsRef.current.delete(key);
     if (readyKey === key) {
@@ -152,17 +155,18 @@ export function useTerminalSession({
   }, [readyKey]);
 
   const activeKey = useMemo(() => {
-    if (!activeWorkspace || !activeTerminalId) {
+    if (!activeWorkspace || !activeThreadId || !activeTerminalId) {
       return null;
     }
-    return `${activeWorkspace.id}:${activeTerminalId}`;
-  }, [activeTerminalId, activeWorkspace]);
+    return `${activeWorkspace.id}:${activeThreadId}:${activeTerminalId}`;
+  }, [activeTerminalId, activeThreadId, activeWorkspace]);
 
   useEffect(() => {
     activeKeyRef.current = activeKey;
     activeWorkspaceRef.current = activeWorkspace;
+    activeThreadIdRef.current = activeThreadId;
     activeTerminalIdRef.current = activeTerminalId;
-  }, [activeKey, activeTerminalId, activeWorkspace]);
+  }, [activeKey, activeTerminalId, activeThreadId, activeWorkspace]);
 
   const writeToTerminal = useCallback((data: string) => {
     terminalRef.current?.write(data);
@@ -205,8 +209,8 @@ export function useTerminalSession({
   useEffect(() => {
     const unlisten = subscribeTerminalOutput(
       (payload: TerminalOutputEvent) => {
-        const { workspaceId, terminalId, data } = payload;
-        const key = `${workspaceId}:${terminalId}`;
+        const { workspaceId, threadId, terminalId, data } = payload;
+        const key = `${workspaceId}:${threadId}:${terminalId}`;
         const next = appendBuffer(outputBuffersRef.current.get(key), data);
         outputBuffersRef.current.set(key, next);
         if (activeKeyRef.current === key) {
@@ -227,8 +231,8 @@ export function useTerminalSession({
   useEffect(() => {
     const unlisten = subscribeTerminalExit(
       (payload: TerminalExitEvent) => {
-        cleanupTerminalSession(payload.workspaceId, payload.terminalId);
-        onSessionExit?.(payload.workspaceId, payload.terminalId);
+        cleanupTerminalSession(payload.workspaceId, payload.threadId, payload.terminalId);
+        onSessionExit?.(payload.workspaceId, payload.threadId, payload.terminalId);
       },
       {
         onError: (error) => {
@@ -273,15 +277,16 @@ export function useTerminalSession({
 
       inputDisposableRef.current = terminal.onData((data: string) => {
         const workspace = activeWorkspaceRef.current;
+        const threadId = activeThreadIdRef.current;
         const terminalId = activeTerminalIdRef.current;
-        if (!workspace || !terminalId) {
+        if (!workspace || !threadId || !terminalId) {
           return;
         }
-        const key = `${workspace.id}:${terminalId}`;
+        const key = `${workspace.id}:${threadId}:${terminalId}`;
         if (!openedSessionsRef.current.has(key)) {
           return;
         }
-        void writeTerminalSession(workspace.id, terminalId, data).catch((error) => {
+        void writeTerminalSession(workspace.id, threadId, terminalId, data).catch((error) => {
           if (shouldIgnoreTerminalError(error)) {
             openedSessionsRef.current.delete(key);
             return;
@@ -310,7 +315,7 @@ export function useTerminalSession({
       setReadyKey(null);
       return;
     }
-    if (!activeWorkspace || !activeTerminalId) {
+    if (!activeWorkspace || !activeThreadId || !activeTerminalId) {
       setStatus("idle");
       setMessage("Open a terminal to start a session.");
       setHasSession(false);
@@ -324,7 +329,7 @@ export function useTerminalSession({
       setReadyKey(null);
       return;
     }
-    const key = `${activeWorkspace.id}:${activeTerminalId}`;
+    const key = `${activeWorkspace.id}:${activeThreadId}:${activeTerminalId}`;
     const fitAddon = fitAddonRef.current;
     fitAddon.fit();
 
@@ -334,7 +339,7 @@ export function useTerminalSession({
       setStatus("connecting");
       setMessage("Starting terminal session...");
       if (!openedSessionsRef.current.has(key)) {
-        await openTerminalSession(activeWorkspace.id, activeTerminalId, cols, rows);
+        await openTerminalSession(activeWorkspace.id, activeThreadId, activeTerminalId, cols, rows);
         openedSessionsRef.current.add(key);
       }
       setStatus("ready");
@@ -356,6 +361,7 @@ export function useTerminalSession({
     });
   }, [
     activeTerminalId,
+    activeThreadId,
     activeWorkspace,
     isVisible,
     onDebug,
@@ -385,6 +391,7 @@ export function useTerminalSession({
       !isVisible ||
       !terminalRef.current ||
       !activeWorkspace ||
+      !activeThreadId ||
       !activeTerminalId ||
       !hasSession
     ) {
@@ -398,9 +405,10 @@ export function useTerminalSession({
 
     const resize = () => {
       fitAddon.fit();
-      const key = `${activeWorkspace.id}:${activeTerminalId}`;
+      const key = `${activeWorkspace.id}:${activeThreadId}:${activeTerminalId}`;
       resizeTerminalSession(
         activeWorkspace.id,
+        activeThreadId,
         activeTerminalId,
         terminal.cols,
         terminal.rows,
@@ -425,7 +433,7 @@ export function useTerminalSession({
     return () => {
       observer.disconnect();
     };
-  }, [activeTerminalId, activeWorkspace, hasSession, isVisible, onDebug]);
+  }, [activeTerminalId, activeThreadId, activeWorkspace, hasSession, isVisible, onDebug]);
 
   return {
     status,

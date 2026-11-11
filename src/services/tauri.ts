@@ -1105,35 +1105,39 @@ export async function cancelDictation(): Promise<DictationSessionState> {
 
 export async function openTerminalSession(
   workspaceId: string,
+  threadId: string,
   terminalId: string,
   cols: number,
   rows: number,
 ): Promise<{ id: string }> {
-  return invoke("terminal_open", { workspaceId, terminalId, cols, rows });
+  return invoke("terminal_open", { workspaceId, threadId, terminalId, cols, rows });
 }
 
 export async function writeTerminalSession(
   workspaceId: string,
+  threadId: string,
   terminalId: string,
   data: string,
 ): Promise<void> {
-  return invoke("terminal_write", { workspaceId, terminalId, data });
+  return invoke("terminal_write", { workspaceId, threadId, terminalId, data });
 }
 
 export async function resizeTerminalSession(
   workspaceId: string,
+  threadId: string,
   terminalId: string,
   cols: number,
   rows: number,
 ): Promise<void> {
-  return invoke("terminal_resize", { workspaceId, terminalId, cols, rows });
+  return invoke("terminal_resize", { workspaceId, threadId, terminalId, cols, rows });
 }
 
 export async function closeTerminalSession(
   workspaceId: string,
+  threadId: string,
   terminalId: string,
 ): Promise<void> {
-  return invoke("terminal_close", { workspaceId, terminalId });
+  return invoke("terminal_close", { workspaceId, threadId, terminalId });
 }
 
 export async function listThreads(

@@ -6,16 +6,18 @@ import { writeTerminalSession } from "../../../services/tauri";
 
 type PendingLaunch = {
   workspaceId: string;
+  threadId: string;
   terminalId: string;
   script: string;
 };
 
 type UseWorkspaceLaunchScriptOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  activeThreadId?: string | null;
   updateWorkspaceSettings: (id: string, settings: WorkspaceSettings) => Promise<WorkspaceInfo>;
   openTerminal: () => void;
-  ensureLaunchTerminal: (workspaceId: string) => string;
-  restartLaunchSession: (workspaceId: string, terminalId: string) => Promise<void>;
+  ensureLaunchTerminal: (workspaceId: string, threadId: string) => string;
+  restartLaunchSession: (workspaceId: string, threadId: string, terminalId: string) => Promise<void>;
   terminalState: TerminalSessionState | null;
   activeTerminalId: string | null;
 };
@@ -35,6 +37,7 @@ export type WorkspaceLaunchScriptState = {
 
 export function useWorkspaceLaunchScript({
   activeWorkspace,
+  activeThreadId,
   updateWorkspaceSettings,
   openTerminal,
   ensureLaunchTerminal,
@@ -42,6 +45,7 @@ export function useWorkspaceLaunchScript({
   terminalState,
   activeTerminalId,
 }: UseWorkspaceLaunchScriptOptions): WorkspaceLaunchScriptState {
+  const terminalThreadId = activeThreadId ?? "legacy-thread";
   const [editorOpen, setEditorOpen] = useState(false);
   const [draftScript, setDraftScript] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -103,20 +107,22 @@ export function useWorkspaceLaunchScript({
       return;
     }
     setError(null);
-    const terminalId = ensureLaunchTerminal(activeWorkspace.id);
+    const terminalId = ensureLaunchTerminal(activeWorkspace.id, terminalThreadId);
     pendingRunRef.current = {
       workspaceId: activeWorkspace.id,
+      threadId: terminalThreadId,
       terminalId,
       script,
     };
     openTerminal();
-    restartLaunchSession(activeWorkspace.id, terminalId)
+    restartLaunchSession(activeWorkspace.id, terminalThreadId, terminalId)
       .catch((err) => {
         pendingRunRef.current = null;
         setError(err instanceof Error ? err.message : String(err));
       });
   }, [
     activeWorkspace,
+    terminalThreadId,
     ensureLaunchTerminal,
     onOpenEditor,
     openTerminal,
@@ -126,23 +132,24 @@ export function useWorkspaceLaunchScript({
   useEffect(() => {
     const pending = pendingRunRef.current;
     const pendingKey = pending
-      ? `${pending.workspaceId}:${pending.terminalId}`
+      ? `${pending.workspaceId}:${pending.threadId}:${pending.terminalId}`
       : null;
     if (
       !pending ||
       terminalState?.readyKey !== pendingKey ||
       activeTerminalId !== pending.terminalId ||
-      activeWorkspace?.id !== pending.workspaceId
+      activeWorkspace?.id !== pending.workspaceId ||
+      terminalThreadId !== pending.threadId
     ) {
       return;
     }
     pendingRunRef.current = null;
-    writeTerminalSession(pending.workspaceId, pending.terminalId, `${pending.script}\n`).catch(
+    writeTerminalSession(pending.workspaceId, pending.threadId, pending.terminalId, `${pending.script}\n`).catch(
       (err) => {
         setError(err instanceof Error ? err.message : String(err));
       },
     );
-  }, [activeTerminalId, activeWorkspace?.id, terminalState?.readyKey]);
+  }, [activeTerminalId, activeWorkspace?.id, terminalState?.readyKey, terminalThreadId]);
 
   return {
     launchScript,

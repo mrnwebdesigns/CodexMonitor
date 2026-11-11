@@ -11,8 +11,13 @@ type TerminalTabRecord = TerminalTab & {
 
 type UseTerminalTabsOptions = {
   activeWorkspaceId: string | null;
-  onCloseTerminal?: (workspaceId: string, terminalId: string) => void;
+  activeThreadId?: string | null;
+  onCloseTerminal?: (workspaceId: string, threadId: string, terminalId: string) => void;
 };
+
+function terminalScope(workspaceId: string, threadId: string) {
+  return `${workspaceId}:${threadId}`;
+}
 
 function createTerminalId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -44,6 +49,7 @@ function renumberAutoNamedTabs(tabs: TerminalTabRecord[]): TerminalTabRecord[] {
 
 export function useTerminalTabs({
   activeWorkspaceId,
+  activeThreadId,
   onCloseTerminal,
 }: UseTerminalTabsOptions) {
   const [tabsByWorkspace, setTabsByWorkspace] = useState<
@@ -53,119 +59,131 @@ export function useTerminalTabs({
     Record<string, string | null>
   >({});
 
-  const createTerminal = useCallback((workspaceId: string) => {
+  const createTerminal = useCallback((workspaceId: string, threadId = activeThreadId ?? "default") => {
+    const scope = terminalScope(workspaceId, threadId);
     const id = createTerminalId();
     setTabsByWorkspace((prev) => {
-      const existing = prev[workspaceId] ?? [];
+      const existing = prev[scope] ?? [];
       const nextTabs = renumberAutoNamedTabs([
         ...existing,
         { id, title: "", autoNamed: true },
       ]);
       return {
         ...prev,
-        [workspaceId]: nextTabs,
+        [scope]: nextTabs,
       };
     });
-    setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [workspaceId]: id }));
+    setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [scope]: id }));
     return id;
-  }, []);
+  }, [activeThreadId]);
 
   const ensureTerminalWithTitle = useCallback(
-    (workspaceId: string, terminalId: string, title: string) => {
+    (workspaceId: string, threadOrTerminalId: string, terminalIdOrTitle: string, title?: string) => {
+      const threadId = title === undefined ? activeThreadId ?? "default" : threadOrTerminalId;
+      const terminalId = title === undefined ? threadOrTerminalId : terminalIdOrTitle;
+      const resolvedTitle = title ?? terminalIdOrTitle;
+      const scope = terminalScope(workspaceId, threadId);
       setTabsByWorkspace((prev) => {
-        const existing = prev[workspaceId] ?? [];
+        const existing = prev[scope] ?? [];
         const index = existing.findIndex((tab) => tab.id === terminalId);
         if (index === -1) {
           const nextTabs = renumberAutoNamedTabs([
             ...existing,
-            { id: terminalId, title, autoNamed: false },
+            { id: terminalId, title: resolvedTitle, autoNamed: false },
           ]);
           return {
             ...prev,
-            [workspaceId]: nextTabs,
+            [scope]: nextTabs,
           };
         }
-        if (!existing[index].autoNamed && existing[index].title === title) {
+        if (!existing[index].autoNamed && existing[index].title === resolvedTitle) {
           return prev;
         }
         const nextTabs = existing.slice();
         nextTabs[index] = {
           ...existing[index],
-          title,
+          title: resolvedTitle,
           autoNamed: false,
         };
         return {
           ...prev,
-          [workspaceId]: renumberAutoNamedTabs(nextTabs),
+          [scope]: renumberAutoNamedTabs(nextTabs),
         };
       });
-      setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [workspaceId]: terminalId }));
+      setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [scope]: terminalId }));
       return terminalId;
     },
-    [],
+    [activeThreadId],
   );
 
   const closeTerminal = useCallback(
-    (workspaceId: string, terminalId: string) => {
+    (workspaceId: string, threadOrTerminalId: string, terminalId?: string) => {
+      const threadId = terminalId === undefined ? activeThreadId ?? "default" : threadOrTerminalId;
+      const resolvedTerminalId = terminalId ?? threadOrTerminalId;
+      const scope = terminalScope(workspaceId, threadId);
       setTabsByWorkspace((prev) => {
-        const existing = prev[workspaceId] ?? [];
+        const existing = prev[scope] ?? [];
         const nextTabs = renumberAutoNamedTabs(
-          existing.filter((tab) => tab.id !== terminalId),
+          existing.filter((tab) => tab.id !== resolvedTerminalId),
         );
         setActiveTerminalIdByWorkspace((prevActive) => {
-          const active = prevActive[workspaceId];
-          if (active !== terminalId) {
+          const active = prevActive[scope];
+          if (active !== resolvedTerminalId) {
             return prevActive;
           }
           const nextActive = nextTabs.length > 0 ? nextTabs[nextTabs.length - 1].id : null;
           if (!nextActive) {
-            const { [workspaceId]: _, ...rest } = prevActive;
+            const { [scope]: _, ...rest } = prevActive;
             return rest;
           }
-          return { ...prevActive, [workspaceId]: nextActive };
+          return { ...prevActive, [scope]: nextActive };
         });
         if (nextTabs.length === 0) {
-          const { [workspaceId]: _, ...rest } = prev;
+          const { [scope]: _, ...rest } = prev;
           return rest;
         }
-        return { ...prev, [workspaceId]: nextTabs };
+        return { ...prev, [scope]: nextTabs };
       });
-      onCloseTerminal?.(workspaceId, terminalId);
+      onCloseTerminal?.(workspaceId, threadId, resolvedTerminalId);
     },
-    [onCloseTerminal],
+    [activeThreadId, onCloseTerminal],
   );
 
-  const setActiveTerminal = useCallback((workspaceId: string, terminalId: string) => {
-    setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [workspaceId]: terminalId }));
-  }, []);
+  const setActiveTerminal = useCallback((workspaceId: string, threadOrTerminalId: string, terminalId?: string) => {
+    const threadId = terminalId === undefined ? activeThreadId ?? "default" : threadOrTerminalId;
+    const resolvedTerminalId = terminalId ?? threadOrTerminalId;
+    const scope = terminalScope(workspaceId, threadId);
+    setActiveTerminalIdByWorkspace((prev) => ({ ...prev, [scope]: resolvedTerminalId }));
+  }, [activeThreadId]);
 
   const ensureTerminal = useCallback(
-    (workspaceId: string) => {
-      const active = activeTerminalIdByWorkspace[workspaceId];
+    (workspaceId: string, threadId = activeThreadId ?? "default") => {
+      const scope = terminalScope(workspaceId, threadId);
+      const active = activeTerminalIdByWorkspace[scope];
       if (active) {
         return active;
       }
-      return createTerminal(workspaceId);
+      return createTerminal(workspaceId, threadId);
     },
-    [activeTerminalIdByWorkspace, createTerminal],
+    [activeTerminalIdByWorkspace, activeThreadId, createTerminal],
   );
 
   const terminals = useMemo(() => {
     if (!activeWorkspaceId) {
       return [];
     }
-    return (tabsByWorkspace[activeWorkspaceId] ?? []).map(({ id, title }) => ({
+    return (tabsByWorkspace[terminalScope(activeWorkspaceId, activeThreadId ?? "default")] ?? []).map(({ id, title }) => ({
       id,
       title,
     }));
-  }, [activeWorkspaceId, tabsByWorkspace]);
+  }, [activeThreadId, activeWorkspaceId, tabsByWorkspace]);
 
   const activeTerminalId = useMemo(() => {
     if (!activeWorkspaceId) {
       return null;
     }
-    return activeTerminalIdByWorkspace[activeWorkspaceId] ?? null;
-  }, [activeTerminalIdByWorkspace, activeWorkspaceId]);
+    return activeTerminalIdByWorkspace[terminalScope(activeWorkspaceId, activeThreadId ?? "default")] ?? null;
+  }, [activeTerminalIdByWorkspace, activeThreadId, activeWorkspaceId]);
 
   return {
     terminals,

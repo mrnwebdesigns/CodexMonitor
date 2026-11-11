@@ -16,6 +16,7 @@ import {
 
 type PendingLaunch = {
   workspaceId: string;
+  threadId: string;
   terminalId: string;
   script: string;
   entryId: string;
@@ -23,10 +24,11 @@ type PendingLaunch = {
 
 type UseWorkspaceLaunchScriptsOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  activeThreadId?: string | null;
   updateWorkspaceSettings: (id: string, settings: WorkspaceSettings) => Promise<WorkspaceInfo>;
   openTerminal: () => void;
-  ensureLaunchTerminal: (workspaceId: string, entry: LaunchScriptEntry, title: string) => string;
-  restartLaunchSession: (workspaceId: string, terminalId: string) => Promise<void>;
+  ensureLaunchTerminal: (workspaceId: string, threadId: string, entry: LaunchScriptEntry, title: string) => string;
+  restartLaunchSession: (workspaceId: string, threadId: string, terminalId: string) => Promise<void>;
   terminalState: TerminalSessionState | null;
   activeTerminalId: string | null;
 };
@@ -71,6 +73,7 @@ function buildLaunchTitle(entry: LaunchScriptEntry) {
 
 export function useWorkspaceLaunchScripts({
   activeWorkspace,
+  activeThreadId,
   updateWorkspaceSettings,
   openTerminal,
   ensureLaunchTerminal,
@@ -78,6 +81,7 @@ export function useWorkspaceLaunchScripts({
   terminalState,
   activeTerminalId,
 }: UseWorkspaceLaunchScriptsOptions): WorkspaceLaunchScriptsState {
+  const terminalThreadId = activeThreadId ?? "legacy-thread";
   const [editorOpenId, setEditorOpenId] = useState<string | null>(null);
   const [draftScript, setDraftScript] = useState("");
   const [draftIcon, setDraftIcon] = useState<LaunchScriptIconId>(DEFAULT_LAUNCH_SCRIPT_ICON);
@@ -299,15 +303,16 @@ export function useWorkspaceLaunchScripts({
       setError(null);
       setErrorById((prev) => ({ ...prev, [id]: null }));
       const title = buildLaunchTitle(entry);
-      const terminalId = ensureLaunchTerminal(activeWorkspace.id, entry, title);
+      const terminalId = ensureLaunchTerminal(activeWorkspace.id, terminalThreadId, entry, title);
       pendingRunRef.current = {
         workspaceId: activeWorkspace.id,
+        threadId: terminalThreadId,
         terminalId,
         script: entry.script,
         entryId: entry.id,
       };
       openTerminal();
-      restartLaunchSession(activeWorkspace.id, terminalId).catch((err) => {
+      restartLaunchSession(activeWorkspace.id, terminalThreadId, terminalId).catch((err) => {
         pendingRunRef.current = null;
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
@@ -316,6 +321,7 @@ export function useWorkspaceLaunchScripts({
     },
     [
       activeWorkspace,
+    terminalThreadId,
       ensureLaunchTerminal,
       launchScripts,
       onOpenEditor,
@@ -327,18 +333,19 @@ export function useWorkspaceLaunchScripts({
   useEffect(() => {
     const pending = pendingRunRef.current;
     const pendingKey = pending
-      ? `${pending.workspaceId}:${pending.terminalId}`
+      ? `${pending.workspaceId}:${pending.threadId}:${pending.terminalId}`
       : null;
     if (
       !pending ||
       terminalState?.readyKey !== pendingKey ||
       activeTerminalId !== pending.terminalId ||
-      activeWorkspace?.id !== pending.workspaceId
+      activeWorkspace?.id !== pending.workspaceId ||
+      terminalThreadId !== pending.threadId
     ) {
       return;
     }
     pendingRunRef.current = null;
-    writeTerminalSession(pending.workspaceId, pending.terminalId, `${pending.script}\n`).catch(
+    writeTerminalSession(pending.workspaceId, pending.threadId, pending.terminalId, `${pending.script}\n`).catch(
       (err) => {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
@@ -349,7 +356,7 @@ export function useWorkspaceLaunchScripts({
         });
       },
     );
-  }, [activeTerminalId, activeWorkspace?.id, terminalState?.readyKey]);
+  }, [activeTerminalId, activeWorkspace?.id, terminalState?.readyKey, terminalThreadId]);
 
   return {
     launchScripts,

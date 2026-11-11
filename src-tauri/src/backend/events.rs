@@ -11,6 +11,8 @@ pub(crate) struct AppServerEvent {
 pub(crate) struct TerminalOutput {
     #[serde(rename = "workspaceId")]
     pub(crate) workspace_id: String,
+    #[serde(rename = "threadId")]
+    pub(crate) thread_id: String,
     #[serde(rename = "terminalId")]
     pub(crate) terminal_id: String,
     pub(crate) data: String,
@@ -20,6 +22,8 @@ pub(crate) struct TerminalOutput {
 pub(crate) struct TerminalExit {
     #[serde(rename = "workspaceId")]
     pub(crate) workspace_id: String,
+    #[serde(rename = "threadId")]
+    pub(crate) thread_id: String,
     #[serde(rename = "terminalId")]
     pub(crate) terminal_id: String,
 }

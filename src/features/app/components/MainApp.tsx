@@ -249,6 +249,7 @@ export default function MainApp() {
     closeTerminal: closeTerminalPanel,
   } = useLayoutController({
     activeWorkspaceId,
+    activeThreadId: activeThreadIdRef.current,
     setActiveTab,
     setDebugOpen,
     toggleDebugPanelShortcut: appSettings.toggleDebugPanelShortcut,
@@ -823,6 +824,7 @@ export default function MainApp() {
     requestTerminalFocus,
   } = useTerminalController({
     activeWorkspaceId,
+    activeThreadId,
     activeWorkspace,
     terminalOpen,
     onCloseTerminalPanel: closeTerminalPanel,
@@ -830,20 +832,20 @@ export default function MainApp() {
   });
 
   const ensureLaunchTerminal = useCallback(
-    (workspaceId: string) => ensureTerminalWithTitle(workspaceId, "launch", "Launch"),
+    (workspaceId: string, threadId: string) => ensureTerminalWithTitle(workspaceId, threadId, "launch", "Launch"),
     [ensureTerminalWithTitle],
   );
 
   const openTerminalWithFocus = useCallback(() => {
-    if (!activeWorkspaceId) {
+    if (!activeWorkspaceId || !activeThreadId) {
       return;
     }
     requestTerminalFocus();
     openTerminal();
-  }, [activeWorkspaceId, openTerminal, requestTerminalFocus]);
+  }, [activeThreadId, activeWorkspaceId, openTerminal, requestTerminalFocus]);
 
   const handleToggleTerminalWithFocus = useCallback(() => {
-    if (!activeWorkspaceId) {
+    if (!activeWorkspaceId || !activeThreadId) {
       return;
     }
     if (!terminalOpen) {
@@ -851,6 +853,7 @@ export default function MainApp() {
     }
     handleToggleTerminal();
   }, [
+    activeThreadId,
     activeWorkspaceId,
     handleToggleTerminal,
     requestTerminalFocus,
@@ -859,6 +862,7 @@ export default function MainApp() {
 
   const launchScriptState = useWorkspaceLaunchScript({
     activeWorkspace,
+    activeThreadId,
     updateWorkspaceSettings,
     openTerminal: openTerminalWithFocus,
     ensureLaunchTerminal,
@@ -869,12 +873,14 @@ export default function MainApp() {
 
   const launchScriptsState = useWorkspaceLaunchScripts({
     activeWorkspace,
+    activeThreadId,
     updateWorkspaceSettings,
     openTerminal: openTerminalWithFocus,
-    ensureLaunchTerminal: (workspaceId, entry, title) => {
+    ensureLaunchTerminal: (workspaceId, threadId, entry, title) => {
       const label = entry.label?.trim() || entry.icon;
       return ensureTerminalWithTitle(
         workspaceId,
+        threadId,
         `launch:${entry.id}`,
         title || `Launch ${label}`,
       );
