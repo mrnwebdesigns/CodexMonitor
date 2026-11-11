@@ -4,15 +4,19 @@ import {
   MAX_PINS_SOFT_LIMIT,
   STORAGE_KEY_CUSTOM_NAMES,
   STORAGE_KEY_PINNED_THREADS,
+  STORAGE_KEY_FLAGGED_THREADS,
   type CustomNamesMap,
   type PinnedThreadsMap,
+  type FlaggedThreadsMap,
   type ThreadActivityMap,
   loadCustomNames,
   loadPinnedThreads,
+  loadFlaggedThreads,
   loadThreadActivity,
   makeCustomNameKey,
   makePinKey,
   savePinnedThreads,
+  saveFlaggedThreads,
   saveThreadActivity,
 } from "@threads/utils/threadStorage";
 
@@ -21,6 +25,7 @@ type UseThreadStorageResult = {
   pinnedThreadsRef: MutableRefObject<PinnedThreadsMap>;
   threadActivityRef: MutableRefObject<ThreadActivityMap>;
   pinnedThreadsVersion: number;
+  flaggedThreadsVersion: number;
   getCustomName: (workspaceId: string, threadId: string) => string | undefined;
   recordThreadActivity: (
     workspaceId: string,
@@ -31,12 +36,17 @@ type UseThreadStorageResult = {
   unpinThread: (workspaceId: string, threadId: string) => void;
   isThreadPinned: (workspaceId: string, threadId: string) => boolean;
   getPinTimestamp: (workspaceId: string, threadId: string) => number | null;
+  flagThread: (workspaceId: string, threadId: string) => void;
+  unflagThread: (workspaceId: string, threadId: string) => void;
+  isThreadFlagged: (workspaceId: string, threadId: string) => boolean;
 };
 
 export function useThreadStorage(): UseThreadStorageResult {
   const threadActivityRef = useRef<ThreadActivityMap>(loadThreadActivity());
   const pinnedThreadsRef = useRef<PinnedThreadsMap>(loadPinnedThreads());
+  const flaggedThreadsRef = useRef<FlaggedThreadsMap>(loadFlaggedThreads());
   const [pinnedThreadsVersion, setPinnedThreadsVersion] = useState(0);
+  const [flaggedThreadsVersion, setFlaggedThreadsVersion] = useState(0);
   const customNamesRef = useRef<CustomNamesMap>({});
 
   useEffect(() => {
@@ -48,6 +58,18 @@ export function useThreadStorage(): UseThreadStorageResult {
       if (event.key === STORAGE_KEY_CUSTOM_NAMES) {
         customNamesRef.current = loadCustomNames();
       }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    flaggedThreadsRef.current = loadFlaggedThreads();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY_FLAGGED_THREADS) return;
+      flaggedThreadsRef.current = loadFlaggedThreads();
+      setFlaggedThreadsVersion((version) => version + 1);
     };
     window.addEventListener("storage", handleStorage);
     return () => window.removeEventListener("storage", handleStorage);
@@ -137,16 +159,41 @@ export function useThreadStorage(): UseThreadStorageResult {
     [],
   );
 
+  const flagThread = useCallback((workspaceId: string, threadId: string) => {
+    const key = makePinKey(workspaceId, threadId);
+    if (key in flaggedThreadsRef.current) return;
+    const next: FlaggedThreadsMap = { ...flaggedThreadsRef.current, [key]: true };
+    flaggedThreadsRef.current = next;
+    saveFlaggedThreads(next);
+    setFlaggedThreadsVersion((version) => version + 1);
+  }, []);
+
+  const unflagThread = useCallback((workspaceId: string, threadId: string) => {
+    const key = makePinKey(workspaceId, threadId);
+    if (!(key in flaggedThreadsRef.current)) return;
+    const { [key]: _removed, ...rest } = flaggedThreadsRef.current;
+    flaggedThreadsRef.current = rest;
+    saveFlaggedThreads(rest);
+    setFlaggedThreadsVersion((version) => version + 1);
+  }, []);
+
+  const isThreadFlagged = useCallback((workspaceId: string, threadId: string) =>
+    makePinKey(workspaceId, threadId) in flaggedThreadsRef.current, []);
+
   return {
     customNamesRef,
     pinnedThreadsRef,
     threadActivityRef,
     pinnedThreadsVersion,
+    flaggedThreadsVersion,
     getCustomName,
     recordThreadActivity,
     pinThread,
     unpinThread,
     isThreadPinned,
     getPinTimestamp,
+    flagThread,
+    unflagThread,
+    isThreadFlagged,
   };
 }

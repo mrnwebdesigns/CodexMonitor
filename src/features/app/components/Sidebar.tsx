@@ -45,6 +45,7 @@ import { useMenuController } from "../hooks/useMenuController";
 import { useSidebarMenus } from "../hooks/useSidebarMenus";
 import { useSidebarScrollFade } from "../hooks/useSidebarScrollFade";
 import { useThreadRows } from "../hooks/useThreadRows";
+import { ThreadFlagContext } from "./ThreadFlagContext";
 import { useDebouncedValue } from "../../../hooks/useDebouncedValue";
 import { getUsageLabels } from "../utils/usageLabels";
 import { formatRelativeTimeShort } from "../../../utils/time";
@@ -122,6 +123,7 @@ type SidebarProps = {
   threadListPagingByWorkspace: Record<string, boolean>;
   threadListCursorByWorkspace: Record<string, string | null>;
   pinnedThreadsVersion: number;
+  flaggedThreadsVersion?: number;
   threadListSortKey: ThreadListSortKey;
   onSetThreadListSortKey: (sortKey: ThreadListSortKey) => void;
   threadListOrganizeMode: ThreadListOrganizeMode;
@@ -156,6 +158,9 @@ type SidebarProps = {
   unpinThread: (workspaceId: string, threadId: string) => void;
   isThreadPinned: (workspaceId: string, threadId: string) => boolean;
   getPinTimestamp: (workspaceId: string, threadId: string) => number | null;
+  flagThread?: (workspaceId: string, threadId: string) => void;
+  unflagThread?: (workspaceId: string, threadId: string) => void;
+  isThreadFlagged?: (workspaceId: string, threadId: string) => boolean;
   getThreadArgsBadge?: (workspaceId: string, threadId: string) => string | null;
   onRenameThread: (workspaceId: string, threadId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
@@ -187,6 +192,7 @@ export const Sidebar = memo(function Sidebar({
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   pinnedThreadsVersion,
+  flaggedThreadsVersion: _flaggedThreadsVersion,
   threadListSortKey,
   onSetThreadListSortKey,
   threadListOrganizeMode,
@@ -221,6 +227,9 @@ export const Sidebar = memo(function Sidebar({
   unpinThread,
   isThreadPinned,
   getPinTimestamp,
+  flagThread,
+  unflagThread,
+  isThreadFlagged,
   getThreadArgsBadge,
   onRenameThread,
   onDeleteWorkspace,
@@ -309,6 +318,9 @@ export const Sidebar = memo(function Sidebar({
       onPinThread: pinThread,
       onUnpinThread: unpinThread,
       isThreadPinned,
+      onFlagThread: flagThread,
+      onUnflagThread: unflagThread,
+      isThreadFlagged,
       onRenameThread,
       onReloadWorkspaceThreads,
       onDeleteWorkspace,
@@ -836,6 +848,7 @@ export const Sidebar = memo(function Sidebar({
   }, [isSearchOpen]);
 
   return (
+    <ThreadFlagContext.Provider value={{ isThreadFlagged: isThreadFlagged ?? (() => false) }}>
     <aside
       className={`sidebar${isSearchOpen ? " search-open" : ""}`}
       ref={workspaceDropTargetRef}
@@ -1062,6 +1075,7 @@ export const Sidebar = memo(function Sidebar({
         onCancelSwitchAccount={onCancelSwitchAccount}
       />
     </aside>
+    </ThreadFlagContext.Provider>
   );
 });
 

@@ -45,6 +45,27 @@ vi.mock("../../../services/toasts", () => ({
 }));
 
 describe("useSidebarMenus", () => {
+  it("toggles the Flag action in a thread menu", async () => {
+    menuNew.mockClear();
+    const onFlagThread = vi.fn();
+    const onUnflagThread = vi.fn();
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn(), clientX: 12, clientY: 34 } as unknown as ReactMouseEvent;
+    const { result, rerender } = renderHook(({ flagged }) => useSidebarMenus({
+      onDeleteThread: vi.fn(), onSyncThread: vi.fn(), onPinThread: vi.fn(), onUnpinThread: vi.fn(),
+      isThreadPinned: () => false, onRenameThread: vi.fn(), onReloadWorkspaceThreads: vi.fn(), onDeleteWorkspace: vi.fn(), onDeleteWorktree: vi.fn(),
+      onFlagThread, onUnflagThread, isThreadFlagged: () => flagged,
+    }), { initialProps: { flagged: false } });
+
+    await result.current.showThreadMenu(event, "ws-1", "thread-1", true);
+    menuNew.mock.calls[0][0].items.find((item: { text: string }) => item.text === "Flag").action();
+    expect(onFlagThread).toHaveBeenCalledWith("ws-1", "thread-1");
+
+    rerender({ flagged: true });
+    await result.current.showThreadMenu(event, "ws-1", "thread-1", true);
+    menuNew.mock.calls[1][0].items.find((item: { text: string }) => item.text === "Unflag").action();
+    expect(onUnflagThread).toHaveBeenCalledWith("ws-1", "thread-1");
+  });
+
   it("offers the current project color and routes selection and clearing to the project", async () => {
     menuNew.mockClear();
     const onSetProjectColor = vi.fn();

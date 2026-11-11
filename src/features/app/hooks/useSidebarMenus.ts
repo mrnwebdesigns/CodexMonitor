@@ -14,6 +14,9 @@ type SidebarMenuHandlers = {
   onPinThread: (workspaceId: string, threadId: string) => void;
   onUnpinThread: (workspaceId: string, threadId: string) => void;
   isThreadPinned: (workspaceId: string, threadId: string) => boolean;
+  onFlagThread?: (workspaceId: string, threadId: string) => void;
+  onUnflagThread?: (workspaceId: string, threadId: string) => void;
+  isThreadFlagged?: (workspaceId: string, threadId: string) => boolean;
   onRenameThread: (workspaceId: string, threadId: string) => void;
   onReloadWorkspaceThreads: (workspaceId: string) => void;
   onDeleteWorkspace: (workspaceId: string) => void;
@@ -31,6 +34,9 @@ export function useSidebarMenus({
   onPinThread,
   onUnpinThread,
   isThreadPinned,
+  onFlagThread,
+  onUnflagThread,
+  isThreadFlagged,
   onRenameThread,
   onReloadWorkspaceThreads,
   onDeleteWorkspace,
@@ -92,6 +98,15 @@ export function useSidebarMenus({
           }),
         );
       }
+      if (isThreadFlagged && onFlagThread && onUnflagThread) {
+        const isFlagged = isThreadFlagged(workspaceId, threadId);
+        items.push(await MenuItem.new({
+          text: isFlagged ? "Unflag" : "Flag",
+          action: () => isFlagged
+            ? onUnflagThread(workspaceId, threadId)
+            : onFlagThread(workspaceId, threadId),
+        }));
+      }
       items.push(copyItem, archiveItem);
       const menu = await Menu.new({ items });
       const window = getCurrentWindow();
@@ -100,11 +115,14 @@ export function useSidebarMenus({
     },
     [
       isThreadPinned,
+      isThreadFlagged,
       onDeleteThread,
       onPinThread,
       onRenameThread,
       onSyncThread,
       onUnpinThread,
+      onFlagThread,
+      onUnflagThread,
       onRemoveActiveThread,
     ],
   );

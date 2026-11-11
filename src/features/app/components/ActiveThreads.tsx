@@ -6,6 +6,7 @@ import { activeThreadKey, type ActiveThread } from "@/features/workspaces/domain
 import type { UsageGovernorQueueItem, UsageGovernorSnapshot } from "@/types";
 import { formatRelativeTimeShort } from "@utils/time";
 import { sidebarColorStyle, type SidebarColor } from "@app/utils/sidebarColors";
+import { ThreadFlagContext } from "./ThreadFlagContext";
 
 const ACTIVE_THREADS_GROUPING_STORAGE_KEY = "codexmonitor.activeThreadsGrouping";
 const LEGACY_ACTIVE_THREAD_ORDER_KEY = "codexmonitor.activeThreadOrder.v1";
@@ -118,7 +119,7 @@ export function ActiveThreads({
         aria-label={`Open thread: ${label} (${projectName})`} aria-describedby={finishedUnread ? `active-thread-unread-${thread.id}` : undefined} title={`${label} · ${projectName} · ${detail}`}>
         <span className={`active-thread-dot ${dotClass}`} aria-hidden />
         {entry.hasUnread && !finishedUnread && <span className="active-thread-notification" role="status" aria-label="New activity" title="New activity" />}
-        <span className="active-thread-copy"><span className="active-thread-name">{label}</span><span className="active-thread-meta">{projectName} · <span id={finishedUnread ? `active-thread-unread-${thread.id}` : undefined} className={finishedUnread ? "active-thread-unread" : undefined}>{detail}</span></span></span>
+        <span className="active-thread-copy"><span className="active-thread-name">{label}<ThreadFlagContext.Consumer>{({ isThreadFlagged }) => isThreadFlagged(workspaceId, thread.id) && <span className="thread-flag-indicator" role="img" aria-label="Flagged" title="Flagged">⚑</span>}</ThreadFlagContext.Consumer></span><span className="active-thread-meta">{projectName} · <span id={finishedUnread ? `active-thread-unread-${thread.id}` : undefined} className={finishedUnread ? "active-thread-unread" : undefined}>{detail}</span></span></span>
       </button>
       <button type="button" className="ghost active-thread-remove" aria-label={`Remove from Active Threads: ${label} (${projectName})`} title="Remove from Active Threads until new activity in this chat" onClick={() => onRemove(workspaceId, thread.id)}>
         <X aria-hidden />

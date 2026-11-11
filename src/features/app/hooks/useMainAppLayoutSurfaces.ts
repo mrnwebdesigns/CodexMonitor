@@ -47,6 +47,7 @@ type UseMainAppLayoutSurfacesArgs = {
   threadListPagingByWorkspace: SidebarProps["threadListPagingByWorkspace"];
   threadListCursorByWorkspace: SidebarProps["threadListCursorByWorkspace"];
   pinnedThreadsVersion: number;
+  flaggedThreadsVersion: number;
   threadListSortKey: SidebarProps["threadListSortKey"];
   onSetThreadListSortKey: SidebarProps["onSetThreadListSortKey"];
   threadListOrganizeMode: SidebarProps["threadListOrganizeMode"];
@@ -94,7 +95,7 @@ type UseMainAppLayoutSurfacesArgs = {
   displayNodes: ReturnType<typeof useMainAppDisplayNodes>;
   threadPinning: Pick<
     SidebarProps,
-    "pinThread" | "unpinThread" | "isThreadPinned" | "getPinTimestamp" | "getThreadArgsBadge"
+    "pinThread" | "unpinThread" | "isThreadPinned" | "getPinTimestamp" | "getThreadArgsBadge" | "flagThread" | "unflagThread" | "isThreadFlagged"
   >;
   workspaceDrop: {
     workspaceDropTargetRef: SidebarProps["workspaceDropTargetRef"];
@@ -256,6 +257,7 @@ function buildPrimarySurface({
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   pinnedThreadsVersion,
+  flaggedThreadsVersion,
   threadListSortKey,
   onSetThreadListSortKey,
   threadListOrganizeMode,
@@ -410,6 +412,7 @@ function buildPrimarySurface({
       threadListPagingByWorkspace,
       threadListCursorByWorkspace,
       pinnedThreadsVersion,
+      flaggedThreadsVersion,
       threadListSortKey,
       onSetThreadListSortKey,
       threadListOrganizeMode,
@@ -444,6 +447,9 @@ function buildPrimarySurface({
       unpinThread: threadPinning.unpinThread,
       isThreadPinned: threadPinning.isThreadPinned,
       getPinTimestamp: threadPinning.getPinTimestamp,
+      flagThread: threadPinning.flagThread,
+      unflagThread: threadPinning.unflagThread,
+      isThreadFlagged: threadPinning.isThreadFlagged,
       getThreadArgsBadge: threadPinning.getThreadArgsBadge,
       onRenameThread: sidebarHandlers.onRenameThread,
       onDeleteWorkspace: sidebarHandlers.onDeleteWorkspace,
@@ -983,6 +989,7 @@ export function useMainAppLayoutSurfaces({
   threadListPagingByWorkspace,
   threadListCursorByWorkspace,
   pinnedThreadsVersion,
+  flaggedThreadsVersion,
   threadListSortKey,
   onSetThreadListSortKey,
   threadListOrganizeMode,
@@ -1150,6 +1157,7 @@ export function useMainAppLayoutSurfaces({
     threadListPagingByWorkspace,
     threadListCursorByWorkspace,
     pinnedThreadsVersion,
+    flaggedThreadsVersion,
     threadListSortKey,
     onSetThreadListSortKey,
     threadListOrganizeMode,

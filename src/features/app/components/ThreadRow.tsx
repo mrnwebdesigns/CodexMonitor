@@ -6,6 +6,7 @@ import {
   getThreadStatusClass,
   type ThreadStatusById,
 } from "../../../utils/threadStatus";
+import { useThreadFlagged } from "./ThreadFlagContext";
 
 function hashString(value: string) {
   let hash = 0;
@@ -162,9 +163,10 @@ export function ThreadRow({
   const contextLabel = badge ?? modelBadge;
   const canPin = depth === 0;
   const isPinned = canPin && isThreadPinned(workspaceId, thread.id);
+  const isFlagged = useThreadFlagged(workspaceId, thread.id);
   const canToggleSubagents = hasSubagentChildren && Boolean(onToggleSubagents);
   const hasDetails = Boolean(
-    effectiveWorkspaceLabel || subagentLabel || contextLabel || statusLabel || isPinned,
+    effectiveWorkspaceLabel || subagentLabel || contextLabel || statusLabel || isPinned || isFlagged,
   );
 
   return (
@@ -207,6 +209,7 @@ export function ThreadRow({
       <div className="thread-content">
         <div className="thread-headline">
           <span className="thread-name">{thread.name}</span>
+          {isFlagged && <span className="thread-flag-indicator" role="img" aria-label="Flagged" title="Flagged">⚑</span>}
           {recentlyFinished && (
             <span className="thread-finished-indicator" role="status">
               Finished

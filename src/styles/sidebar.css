@@ -1360,6 +1360,13 @@
   line-height: 1.2;
 }
 
+.thread-flag-indicator {
+  flex-shrink: 0;
+  color: #f5b94c;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .thread-finished-indicator {
   flex-shrink: 0;
   padding: 2px 6px;

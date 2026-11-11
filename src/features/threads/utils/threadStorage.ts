@@ -2,6 +2,7 @@ import type { AccessMode, ServiceTier } from "@/types";
 
 const STORAGE_KEY_THREAD_ACTIVITY = "codexmonitor.threadLastUserActivity";
 export const STORAGE_KEY_PINNED_THREADS = "codexmonitor.pinnedThreads";
+export const STORAGE_KEY_FLAGGED_THREADS = "codexmonitor.flaggedThreads";
 export const STORAGE_KEY_CUSTOM_NAMES = "codexmonitor.threadCustomNames";
 export const STORAGE_KEY_THREAD_CODEX_PARAMS = "codexmonitor.threadCodexParams";
 export const STORAGE_KEY_DETACHED_REVIEW_LINKS = "codexmonitor.detachedReviewLinks";
@@ -9,6 +10,7 @@ export const MAX_PINS_SOFT_LIMIT = 5;
 
 export type ThreadActivityMap = Record<string, Record<string, number>>;
 export type PinnedThreadsMap = Record<string, number>;
+export type FlaggedThreadsMap = Record<string, true>;
 export type CustomNamesMap = Record<string, string>;
 type DetachedReviewLinksMap = Record<string, Record<string, string>>;
 
@@ -174,6 +176,27 @@ export function savePinnedThreads(pinned: PinnedThreadsMap) {
       STORAGE_KEY_PINNED_THREADS,
       JSON.stringify(pinned),
     );
+  } catch {
+    // Best-effort persistence; ignore write failures.
+  }
+}
+
+export function loadFlaggedThreads(): FlaggedThreadsMap {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY_FLAGGED_THREADS);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as FlaggedThreadsMap;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveFlaggedThreads(flagged: FlaggedThreadsMap): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY_FLAGGED_THREADS, JSON.stringify(flagged));
   } catch {
     // Best-effort persistence; ignore write failures.
   }

@@ -6,8 +6,10 @@ import {
   STORAGE_KEY_PINNED_THREADS,
   loadCustomNames,
   loadPinnedThreads,
+  loadFlaggedThreads,
   loadThreadActivity,
   savePinnedThreads,
+  saveFlaggedThreads,
   saveThreadActivity,
 } from "@threads/utils/threadStorage";
 import { useThreadStorage } from "./useThreadStorage";
@@ -16,14 +18,17 @@ vi.mock("@threads/utils/threadStorage", () => ({
   MAX_PINS_SOFT_LIMIT: 2,
   STORAGE_KEY_CUSTOM_NAMES: "custom-names",
   STORAGE_KEY_PINNED_THREADS: "pinned-threads",
+  STORAGE_KEY_FLAGGED_THREADS: "flagged-threads",
   loadCustomNames: vi.fn(),
   loadPinnedThreads: vi.fn(),
+  loadFlaggedThreads: vi.fn(),
   loadThreadActivity: vi.fn(),
   makeCustomNameKey: (workspaceId: string, threadId: string) =>
     `${workspaceId}:${threadId}`,
   makePinKey: (workspaceId: string, threadId: string) =>
     `${workspaceId}:${threadId}`,
   savePinnedThreads: vi.fn(),
+  saveFlaggedThreads: vi.fn(),
   saveThreadActivity: vi.fn(),
 }));
 
@@ -112,6 +117,23 @@ describe("useThreadStorage", () => {
     expect(result.current.isThreadPinned("ws-1", "thread-1")).toBe(false);
     expect(savePinnedThreads).toHaveBeenCalledWith({});
     expect(result.current.pinnedThreadsVersion).toBe(versionAfterPin + 1);
+  });
+
+  it("flags and unflags threads while updating persistence", () => {
+    vi.mocked(loadThreadActivity).mockReturnValue({});
+    vi.mocked(loadPinnedThreads).mockReturnValue({});
+    vi.mocked(loadFlaggedThreads).mockReturnValue({});
+    vi.mocked(loadCustomNames).mockReturnValue({});
+
+    const { result } = renderHook(() => useThreadStorage());
+    act(() => result.current.flagThread("ws-1", "thread-1"));
+
+    expect(result.current.isThreadFlagged("ws-1", "thread-1")).toBe(true);
+    expect(saveFlaggedThreads).toHaveBeenCalledWith({ "ws-1:thread-1": true });
+
+    act(() => result.current.unflagThread("ws-1", "thread-1"));
+    expect(result.current.isThreadFlagged("ws-1", "thread-1")).toBe(false);
+    expect(saveFlaggedThreads).toHaveBeenLastCalledWith({});
   });
 
   it("ignores duplicate pins and reacts to pinned storage changes", async () => {
