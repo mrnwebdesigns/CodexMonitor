@@ -1,5 +1,8 @@
 .messages {
   overflow-y: auto;
+  /* Keep the conversation column from shifting as live work updates add or
+   * remove just enough content to toggle the vertical scrollbar. */
+  scrollbar-gutter: stable;
   -webkit-app-region: no-drag;
   flex: 1;
   min-height: 0;
@@ -60,6 +63,9 @@
   align-items: center;
   gap: 10px;
   align-self: flex-start;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-height: 32px;
   padding: 8px 12px;
   margin: 0;
   color: var(--text-muted);
@@ -82,13 +88,22 @@
 .working-timer {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 4ch;
   gap: 6px;
   font-variant-numeric: tabular-nums;
   color: var(--text-stronger);
 }
 
+.working-timer-clock {
+  white-space: nowrap;
+}
 
 .working-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   position: relative;
   color: transparent;
   background: linear-gradient(
