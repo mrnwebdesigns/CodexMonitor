@@ -22,6 +22,7 @@ const native = vi.hoisted(() => ({
 const events = vi.hoisted(() => ({
   page: null as null | ((event: BrowserPageEvent) => void),
   selection: null as null | ((event: BrowserSelection) => void),
+  toolNavigation: null as null | ((event: { threadId: string }) => void),
   findOpen: null as null | ((event: { threadId: string }) => void),
   findResult: null as null | ((event: { threadId: string; activeMatch: number; totalMatches: number; finalUpdate: boolean }) => void),
 }));
@@ -29,6 +30,7 @@ vi.mock("@services/tauri", () => native);
 vi.mock("@services/events", () => ({
   subscribeBrowserPage: (callback: (event: BrowserPageEvent) => void) => { events.page = callback; return () => { events.page = null; }; },
   subscribeBrowserSelection: (callback: (event: BrowserSelection) => void) => { events.selection = callback; return () => { events.selection = null; }; },
+  subscribeBrowserToolNavigation: (callback: (event: { threadId: string }) => void) => { events.toolNavigation = callback; return () => { events.toolNavigation = null; }; },
   subscribeBrowserFindOpen: (callback: (event: { threadId: string }) => void) => { events.findOpen = callback; return () => { events.findOpen = null; }; },
   subscribeBrowserFindResult: (callback: (event: { threadId: string; activeMatch: number; totalMatches: number; finalUpdate: boolean }) => void) => { events.findResult = callback; return () => { events.findResult = null; }; },
 }));
@@ -106,6 +108,36 @@ describe("browser feedback workflow", () => {
     expect((screen.getByLabelText("Website address") as HTMLInputElement).value).toBe("");
     fireEvent.click(screen.getAllByRole("tab")[0]);
     await waitFor(() => expect(native.browserNavigate).toHaveBeenLastCalledWith("tabs-thread", "https://first.test/", expect.any(Object)));
+  });
+
+  it("opens a preview link in a new tab and keeps the previous address", async () => {
+    const threadId = "preview-link-thread";
+    const p = { ...props(), threadId };
+    const view = render(<BrowserPanel {...p} />);
+    act(() => events.page?.({ threadId, sessionId: "session", url: "https://first.test/", title: "First page", loading: false }));
+    view.rerender(<BrowserPanel {...p} navigationRequest={{ id: "preview", url: "https://second.test/", newTab: true }} />);
+    await waitFor(() => expect(native.browserNavigate).toHaveBeenLastCalledWith(threadId, "https://second.test/", expect.any(Object)));
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("tab", { name: "First page" }));
+    await waitFor(() => expect(native.browserNavigate).toHaveBeenLastCalledWith(threadId, "https://first.test/", expect.any(Object)));
+  });
+
+  it("assigns an agent-opened preview to a new tab only in the owning thread", async () => {
+    const threadId = "preview-tool-thread";
+    render(<BrowserPanel {...props()} threadId={threadId} />);
+    await waitFor(() => expect(screen.getByLabelText("Browser engine").textContent).toBe("Chromium"));
+    act(() => events.page?.({ threadId, sessionId: "session", url: "https://first.test/", title: "First page", loading: false }));
+    act(() => events.toolNavigation?.({ threadId: "background-thread" }));
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+
+    act(() => {
+      events.toolNavigation?.({ threadId });
+      events.page?.({ threadId, sessionId: "session", url: "https://second.test/", title: "Agent preview", loading: false });
+    });
+    expect(screen.getByRole("tab", { name: "First page" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Agent preview", selected: true })).toBeTruthy();
+    expect(native.browserNavigate).not.toHaveBeenCalled();
   });
 
   it("finds text with Command-F, cycles matches, and clears highlights on Escape", async () => {

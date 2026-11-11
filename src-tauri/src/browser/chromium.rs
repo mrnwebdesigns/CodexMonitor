@@ -836,12 +836,17 @@ async fn open_from_tool(app: &AppHandle, thread_id: String, url: tauri::Url) -> 
                 true,
             )?;
             if session_exists {
-                engine
+                let frame = engine
                     .sessions
                     .get(&thread_id)
                     .and_then(|session| session.browser.main_frame())
-                    .ok_or("Chromium page is unavailable")?
-                    .load_url(Some(&CefString::from(url.as_str())));
+                    .ok_or("Chromium page is unavailable")?;
+                let _ = app.emit_to(
+                    "main",
+                    "browser-tool-navigation",
+                    serde_json::json!({"threadId": thread_id}),
+                );
+                frame.load_url(Some(&CefString::from(url.as_str())));
             }
             Ok(())
         })

@@ -77,9 +77,12 @@ describe("useBrowserPanel", () => {
       workspaceId: "workspace-one",
       threadId: "thread-two",
       url: "https://example.com",
+      newTab: false,
     });
 
     rerender({ threadId: "thread-two" });
     expect(result.current.open).toBe(true);
+    act(() => result.current.openWebsite("workspace-one", "thread-two", "https://example.org"));
+    expect(result.current.navigationRequest).toMatchObject({ url: "https://example.org", newTab: true });
   });
 });

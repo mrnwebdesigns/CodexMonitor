@@ -27,14 +27,20 @@ export function useBrowserPanel(activeThreadId: string | null) {
       setOpenByThread((current) => current[threadId] ? current : { ...current, [threadId]: true });
     }
   }), [activeThreadId]);
-  const [navigationRequest, setNavigationRequest] = useState<{ workspaceId: string; threadId: string; id: string; url: string } | null>(null);
+  const [navigationRequest, setNavigationRequest] = useState<{
+    workspaceId: string;
+    threadId: string;
+    id: string;
+    url: string;
+    newTab: boolean;
+  } | null>(null);
   const clearNavigationRequest = useCallback((id: string) => {
     setNavigationRequest((current) => current?.id === id ? null : current);
   }, []);
   const openWebsite = useCallback((workspaceId: string, threadId: string, url: string) => {
-    setNavigationRequest({ workspaceId, threadId, url, id: crypto.randomUUID() });
+    setNavigationRequest({ workspaceId, threadId, url, id: crypto.randomUUID(), newTab: Boolean(openByThread[threadId]) });
     setOpenByThread((current) => current[threadId] ? current : { ...current, [threadId]: true });
-  }, []);
+  }, [openByThread]);
   const [annotationsByThread, setAnnotations] = useState(readSaved);
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(annotationsByThread)); }

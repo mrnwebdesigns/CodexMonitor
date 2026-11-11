@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import MoveDiagonal from "lucide-react/dist/esm/icons/move-diagonal";
 import { PanelFrame, PanelHeader } from "@/features/design-system/components/panel/PanelPrimitives";
 import { browserAction, browserFind, browserGetUrl, browserNavigate, browserRuntimeInfo, browserSetBounds, browserSetVisible, browserStopFind } from "@services/tauri";
-import { subscribeBrowserFindOpen, subscribeBrowserFindResult, subscribeBrowserPage, subscribeBrowserSelection } from "@services/events";
+import { subscribeBrowserFindOpen, subscribeBrowserFindResult, subscribeBrowserPage, subscribeBrowserSelection, subscribeBrowserToolNavigation } from "@services/events";
 import type { BrowserAnnotation, BrowserSelection } from "../browserTypes";
 import { useBrowserCaptureDraft } from "../hooks/useBrowserCaptureDraft";
 import { formatBrowserAnnotations, normalizeBrowserUrl } from "../utils/browserAnnotations";
@@ -54,7 +54,7 @@ function measureViewport(rect: DOMRect, device: DeviceSettings | null) {
 export type BrowserPanelProps = {
   workspaceId: string;
   threadId: string;
-  navigationRequest?: { id: string; url: string } | null;
+  navigationRequest?: { id: string; url: string; newTab?: boolean } | null;
   onNavigationHandled?: (id: string) => void;
   annotations: BrowserAnnotation[];
   visible: boolean;
@@ -97,6 +97,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   const scheduleBounds = useRef<(() => void) | null>(null);
   const feedback = useRef<HTMLTextAreaElement>(null);
   const findInput = useRef<HTMLInputElement>(null);
+  const navigationRequestRef = useRef(navigationRequest);
   const navigationRequested = useRef(Boolean(navigationRequest));
   const pageUrl = useRef<string | null>(null);
   const activeTabRef = useRef<string | null>(activeTabId);
@@ -105,6 +106,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   const layoutRevision = useRef(0);
   visibleRef.current = visible;
   activeTabRef.current = activeTabId;
+  navigationRequestRef.current = navigationRequest;
   const updateTabs = useCallback((update: (current: BrowserTab[]) => BrowserTab[]) => {
     setTabs((current) => {
       const next = update(current);
@@ -200,7 +202,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
   useEffect(() => {
     let live = true;
     void browserRuntimeInfo().then((value) => { if (live) setRuntime(value); }).catch(() => {});
-    navigationRequested.current = Boolean(navigationRequest);
+    navigationRequested.current = Boolean(navigationRequestRef.current);
     pageUrl.current = null;
     setHasPage(false);
     setRestoreUrl(null);
@@ -240,7 +242,7 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
       unsubscribeSelection();
       void browserSetVisible(threadId, false).catch(() => {});
     };
-  }, [capture, discard, navigationRequest, threadId, updateTabs]);
+  }, [capture, discard, threadId, updateTabs]);
 
   useEffect(() => {
     if (!hasPage || !visible) { void browserSetVisible(threadId, false).catch(() => {}); return; }
@@ -300,7 +302,20 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
     setActiveTabId(id); setAddress(""); setPageTitle("New tab"); setHasPage(false); setLoading(false);
     setSelection(null); setAnnotating(false); discard();
     void browserStopFind(threadId).catch(() => {});
+    return id;
   }, [discard, threadId, updateTabs]);
+
+  const openTabForPreview = useCallback(() => {
+    const currentTab = tabsByThread.get(threadId)?.find((tab) => tab.id === activeTabRef.current);
+    return currentTab?.url ? openNewTab() : activeTabRef.current;
+  }, [openNewTab, threadId]);
+
+  useEffect(() => subscribeBrowserToolNavigation((event) => {
+    if (event.threadId === threadId) {
+      navigationRequested.current = true;
+      openTabForPreview();
+    }
+  }), [openTabForPreview, threadId]);
 
   const selectTab = useCallback((tab: BrowserTab) => {
     if (tab.id === activeTabRef.current) return;
@@ -330,8 +345,9 @@ export function BrowserPanel({ workspaceId, threadId, navigationRequest, onNavig
     handledRequest.current = navigationRequest.id;
     navigationRequested.current = true;
     onNavigationHandled?.(navigationRequest.id);
-    void navigateTo(navigationRequest.url);
-  }, [navigationRequest, visible, navigateTo, onNavigationHandled]);
+    const tabId = navigationRequest.newTab ? openTabForPreview() : activeTabRef.current;
+    void navigateTo(navigationRequest.url, tabId);
+  }, [navigationRequest, visible, navigateTo, onNavigationHandled, openTabForPreview]);
   useEffect(() => {
     if (!visible || !restoreUrl || navigationRequested.current) return;
     setRestoreUrl(null);
