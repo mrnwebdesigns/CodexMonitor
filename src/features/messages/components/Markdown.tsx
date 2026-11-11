@@ -438,14 +438,6 @@ function PreBlock({ node, children, copyUseModifier, onOpenWebsite }: PreProps) 
   if (urlLines) {
     return <LinkBlock urls={urlLines} onOpenWebsite={onOpenWebsite} />;
   }
-  const isSingleLine = !value.includes("\n");
-  if (isSingleLine) {
-    return (
-      <pre className="markdown-codeblock-single">
-        <code className={className}>{value}</code>
-      </pre>
-    );
-  }
   return (
     <CodeBlock
       className={className}

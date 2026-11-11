@@ -616,4 +616,26 @@ describe("Markdown code-block copy", () => {
       expect(writeText).toHaveBeenCalledWith("cd /workspace\npython3 script.py");
     });
   });
+
+  it("provides a copy control for a single-line fenced code block", async () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      clipboard: { writeText },
+    });
+    render(
+      <Markdown
+        value={"```\nenabled    Not logged in\n```"}
+        className="markdown"
+        codeBlockStyle="message"
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Copy code block" }));
+    });
+
+    await vi.waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith("enabled    Not logged in");
+    });
+  });
 });
