@@ -260,7 +260,7 @@ describe("useRemoteThreadRefreshOnFocus", () => {
     expect(unlistenBlur).toHaveBeenCalledTimes(1);
   });
 
-  it("does not poll while processing and refreshes when visibility returns", async () => {
+  it("keeps polling while processing so a missed terminal event can self-heal", async () => {
     const refreshThread = vi.fn().mockResolvedValue(undefined);
 
     renderHook(() =>
@@ -280,10 +280,10 @@ describe("useRemoteThreadRefreshOnFocus", () => {
     );
 
     await act(async () => {
-      vi.advanceTimersByTime(20_000);
+      vi.advanceTimersByTime(12_000);
       await Promise.resolve();
     });
-    expect(refreshThread).toHaveBeenCalledTimes(0);
+    expect(refreshThread).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       visibilityState = "hidden";
@@ -291,7 +291,7 @@ describe("useRemoteThreadRefreshOnFocus", () => {
       vi.advanceTimersByTime(20_000);
       await Promise.resolve();
     });
-    expect(refreshThread).toHaveBeenCalledTimes(0);
+    expect(refreshThread).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       visibilityState = "visible";
@@ -299,13 +299,13 @@ describe("useRemoteThreadRefreshOnFocus", () => {
       vi.advanceTimersByTime(500);
       await Promise.resolve();
     });
-    expect(refreshThread).toHaveBeenCalledTimes(1);
+    expect(refreshThread).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       vi.advanceTimersByTime(20_000);
       await Promise.resolve();
     });
-    expect(refreshThread).toHaveBeenCalledTimes(1);
+    expect(refreshThread).toHaveBeenCalledTimes(3);
   });
 
   it("keeps a low-frequency poll for active remote threads when not processing", async () => {

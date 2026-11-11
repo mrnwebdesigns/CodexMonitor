@@ -117,8 +117,10 @@ export function useRemoteThreadRefreshOnFocus({
       }
       if (
         !canRefresh() ||
-        suspendPolling ||
-        activeThreadIsProcessing ||
+        // A live subscription is normally enough, but its terminal event can be
+        // lost while reconnecting. Keep the authoritative snapshot poll alive
+        // for active turns so a stale local "running" flag can self-heal.
+        (suspendPolling && !activeThreadIsProcessing) ||
         !windowFocused ||
         document.visibilityState !== "visible"
       ) {
