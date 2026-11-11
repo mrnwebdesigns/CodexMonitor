@@ -74,6 +74,63 @@ describe("useThreads UX integration", () => {
     nowSpy.mockRestore();
   });
 
+  it.each([
+    { status: "active", isProcessing: true },
+    { status: "idle", isProcessing: false },
+  ])("reconciles a local turn only when the server reports idle ($status)", async ({ status, isProcessing }) => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    try {
+      const threadId = "local-turn";
+      vi.mocked(resumeThread).mockResolvedValueOnce({ result: { thread: { id: threadId, turns: [] } } });
+      vi.mocked(readThread).mockResolvedValueOnce({ result: { thread: { id: threadId, status: { type: status } } } });
+      const { result } = renderHook(() => useThreads({
+        activeWorkspace: workspace,
+        reconcileLocalActiveTurn: true,
+        onWorkspaceConnected: vi.fn(),
+      }));
+      await act(async () => { result.current.setActiveThreadId(threadId); });
+      act(() => handlers?.onTurnStarted?.(workspace.id, threadId, "turn-1"));
+      expect(result.current.threadStatusById[threadId]?.isProcessing).toBe(true);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(readThread).toHaveBeenCalledWith(workspace.id, threadId);
+      expect(resumeThread).toHaveBeenCalledTimes(1);
+      expect(result.current.threadStatusById[threadId]?.isProcessing).toBe(isProcessing);
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a newer local turn running when an earlier status read finishes late", async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    try {
+      const threadId = "newer-local-turn";
+      let finishRead!: (value: unknown) => void;
+      vi.mocked(readThread).mockReturnValueOnce(new Promise((resolve) => { finishRead = resolve; }));
+      vi.mocked(resumeThread).mockResolvedValueOnce({ result: { thread: { id: threadId, turns: [] } } });
+      const { result } = renderHook(() => useThreads({
+        activeWorkspace: workspace,
+        reconcileLocalActiveTurn: true,
+        onWorkspaceConnected: vi.fn(),
+      }));
+      await act(async () => { result.current.setActiveThreadId(threadId); });
+      act(() => handlers?.onTurnStarted?.(workspace.id, threadId, "earlier-turn"));
+      await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+      expect(readThread).toHaveBeenCalledWith(workspace.id, threadId);
+      act(() => handlers?.onTurnStarted?.(workspace.id, threadId, "newer-turn"));
+      await act(async () => {
+        finishRead({ result: { thread: { id: threadId, status: { type: "idle" } } } });
+      });
+      expect(result.current.threadStatusById[threadId]?.isProcessing).toBe(true);
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("evicts cold transcripts and reloads them even if a late item arrived", async () => {
     vi.mocked(resumeThread).mockImplementation(async (_workspaceId, threadId) => ({
       result: { thread: {

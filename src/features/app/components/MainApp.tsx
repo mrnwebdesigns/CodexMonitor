@@ -509,6 +509,7 @@ export default function MainApp() {
     refreshAccountRateLimits,
   } = useThreads({
     activeWorkspace,
+    reconcileLocalActiveTurn: !appSettingsLoading && appSettings.backendMode === "local",
     onWorkspaceConnected: markWorkspaceConnected,
     onDebug: addDebugEntry,
     model: resolvedModel,

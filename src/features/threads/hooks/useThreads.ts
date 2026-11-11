@@ -27,6 +27,7 @@ import { loadUnreadThreadStatuses, useThreadReadState, type ImportedThreadActivi
 import { useThreadUserInput } from "./useThreadUserInput";
 import { useThreadTitleAutogeneration } from "./useThreadTitleAutogeneration";
 import { useDetachedReviewTracking } from "./useDetachedReviewTracking";
+import { normalizeThreadStatusType } from "./threadTurnEventHelpers";
 import {
   archiveThread as archiveThreadService,
   readThread as readThreadService,
@@ -46,6 +47,7 @@ import { DEFAULT_USAGE_GOVERNOR_SETTINGS } from "@/features/usage/usageGovernor"
 
 type UseThreadsOptions = {
   activeWorkspace: WorkspaceInfo | null;
+  reconcileLocalActiveTurn?: boolean;
   onWorkspaceConnected: (id: string) => void;
   onDebug?: (entry: DebugEntry) => void;
   ensureWorkspaceRuntimeCodexArgs?: (
@@ -78,9 +80,11 @@ function buildWorkspaceThreadKey(workspaceId: string, threadId: string) {
 }
 
 const CASCADE_ARCHIVE_SKIP_TTL_MS = 120_000;
+const LOCAL_ACTIVE_THREAD_STATUS_INTERVAL_MS = 12_000;
 
 export function useThreads({
   activeWorkspace,
+  reconcileLocalActiveTurn = false,
   onWorkspaceConnected,
   onDebug,
   ensureWorkspaceRuntimeCodexArgs,
@@ -580,6 +584,50 @@ export function useThreads({
   );
 
   useAppServerEvents(handlers);
+
+  const activeThreadIsProcessing = Boolean(
+    activeThreadId && state.threadStatusById[activeThreadId]?.isProcessing,
+  );
+  const handleTurnCompleted = handlers.onTurnCompleted;
+  useEffect(() => {
+    if (
+      !reconcileLocalActiveTurn || !activeWorkspace?.connected ||
+      !activeWorkspaceId || !activeThreadId || !activeThreadIsProcessing
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let readingStatus = false;
+    const timer = window.setInterval(() => {
+      if (readingStatus || document.visibilityState !== "visible") return;
+      const turnId = getActiveTurnId(activeThreadId);
+      if (!turnId) return;
+
+      readingStatus = true;
+      void readThreadService(activeWorkspaceId, activeThreadId).then((response) => {
+        if (cancelled || getActiveTurnId(activeThreadId) !== turnId) return;
+        const thread = extractThreadFromResponse(response);
+        const status = thread?.status;
+        if (
+          thread?.id === activeThreadId && status && typeof status === "object" &&
+          normalizeThreadStatusType(status as Record<string, unknown>) === "idle"
+        ) {
+          handleTurnCompleted(activeWorkspaceId, activeThreadId, turnId);
+        }
+      }).catch(() => {
+        // A failed read provides no evidence that the turn has stopped.
+      }).finally(() => { readingStatus = false; });
+    }, LOCAL_ACTIVE_THREAD_STATUS_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    activeThreadId, activeThreadIsProcessing, activeWorkspace?.connected,
+    activeWorkspaceId, getActiveTurnId, handleTurnCompleted, reconcileLocalActiveTurn,
+  ]);
 
   const {
     startThreadForWorkspace: startThreadForWorkspaceInternal,
